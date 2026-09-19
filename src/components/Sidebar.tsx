@@ -7,10 +7,15 @@ import {
   Receipt, 
   UserCircle2, 
   RotateCcw,
-  Store
+  Store,
+  LogOut
 } from 'lucide-react';
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  onLogout: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
   const { activeTab, setActiveTab, pendingConfirmations, cashier, resetToDemoData } = usePOS();
 
   const navItems = [
@@ -40,6 +45,12 @@ export const Sidebar: React.FC = () => {
       shortcut: 'F4',
     },
   ];
+
+  const handleLogout = () => {
+    if (confirm(`Keluar dari sesi kasir "${cashier.name}"?`)) {
+      onLogout();
+    }
+  };
 
   return (
     <>
@@ -86,8 +97,8 @@ export const Sidebar: React.FC = () => {
           })}
         </nav>
 
-        {/* Cashier & Reset Demo Action */}
-        <div className="flex flex-col items-center gap-3 w-full px-2 border-t border-slate-800 pt-3">
+        {/* Cashier, Reset & Logout */}
+        <div className="flex flex-col items-center gap-2 w-full px-2 border-t border-slate-800 pt-3">
           <button
             onClick={() => {
               if (confirm('Muat ulang data demo produk dan riwayat bawaan?')) {
@@ -109,6 +120,16 @@ export const Sidebar: React.FC = () => {
               {cashier.name.split(' ')[0]}
             </span>
           </div>
+
+          {/* Logout button */}
+          <button
+            onClick={handleLogout}
+            title="Keluar / Logout"
+            className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors flex flex-col items-center"
+          >
+            <LogOut className="w-4 h-4 mb-0.5" />
+            <span className="text-[9px]">Keluar</span>
+          </button>
         </div>
       </aside>
 
@@ -147,6 +168,15 @@ export const Sidebar: React.FC = () => {
             </button>
           );
         })}
+
+        {/* Mobile logout as last item */}
+        <button
+          onClick={handleLogout}
+          className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-slate-600 active:text-rose-400"
+        >
+          <LogOut className="w-5 h-5" />
+          <span className="text-[10px] font-semibold leading-none">Keluar</span>
+        </button>
       </nav>
     </>
   );

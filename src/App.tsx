@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePOS } from './context/POSContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -7,18 +7,35 @@ import { ProductsPage } from './pages/ProductsPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { MobileScannerPage } from './pages/MobileScannerPage';
+import { LoginPage } from './pages/LoginPage';
 import { CheckoutModal } from './components/CheckoutModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { PaymentMethodsModal } from './components/PaymentMethodsModal';
 
 export const App: React.FC = () => {
-  const { activeTab, setActiveTab } = usePOS();
+  const { activeTab, setActiveTab, isPaymentMethodsOpen, setIsPaymentMethodsOpen } = usePOS();
 
   // Check if browser is opened as dedicated Mobile Handheld Scanner
   const isScannerMode = window.location.search.includes('mode=scanner');
 
+  // Auth gate — uses sessionStorage so logout happens on browser close
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return sessionStorage.getItem('pos_logged_in') === 'true';
+  });
+
+  const handleLoginSuccess = () => {
+    setIsLoggedIn(true);
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('pos_logged_in');
+    sessionStorage.removeItem('pos_login_name');
+    setIsLoggedIn(false);
+  };
+
   // Global hotkeys for POS cashier speed (only in normal POS mode)
   useEffect(() => {
-    if (isScannerMode) return;
+    if (isScannerMode || !isLoggedIn) return;
 
     const handleGlobalKeys = (e: KeyboardEvent) => {
       // F1 -> Transaksi
@@ -45,17 +62,22 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [setActiveTab, isScannerMode]);
+  }, [setActiveTab, isScannerMode, isLoggedIn]);
 
   // If opened on smartphone in scanner mode, show dedicated mobile scanner view
   if (isScannerMode) {
     return <MobileScannerPage />;
   }
 
+  // Login gate
+  if (!isLoggedIn) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="flex h-screen w-screen bg-slate-100 overflow-hidden font-sans">
       {/* 1. Minimalist Sidebar (desktop only; mobile gets bottom nav inside Sidebar component) */}
-      <Sidebar />
+      <Sidebar onLogout={handleLogout} />
 
       {/* Main App Container */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
@@ -74,6 +96,10 @@ export const App: React.FC = () => {
       {/* Modals */}
       <CheckoutModal />
       <ReceiptModal />
+      <PaymentMethodsModal
+        isOpen={isPaymentMethodsOpen}
+        onClose={() => setIsPaymentMethodsOpen(false)}
+      />
     </div>
   );
 };

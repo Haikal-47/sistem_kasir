@@ -1,4 +1,4 @@
-import { Product, Transaction, CashierProfile } from '../types';
+import { Product, Transaction, CashierProfile, PaymentMethodConfig } from '../types';
 
 export const INITIAL_CASHIER: CashierProfile = {
   id: 'CSH-001',
@@ -246,4 +246,61 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     transferProofVerified: false,
     customerNote: 'Pelanggan Meja 4 / Takeaway',
   }
+];
+
+export const INITIAL_PAYMENT_METHODS: PaymentMethodConfig[] = [
+  {
+    id: 'PM-TUNAI',
+    name: 'Tunai',
+    type: 'TUNAI',
+    icon: '💵',
+    color: 'emerald',
+    isActive: true,
+    isDefault: true,
+  },
+  {
+    id: 'PM-BCA',
+    name: 'BCA Transfer',
+    type: 'TRANSFER',
+    icon: '🏦',
+    color: 'sky',
+    isActive: true,
+    isDefault: false,
+  },
+  {
+    id: 'PM-BNI',
+    name: 'BNI Transfer',
+    type: 'TRANSFER',
+    icon: '🏦',
+    color: 'orange',
+    isActive: true,
+    isDefault: false,
+  },
+  {
+    id: 'PM-BRI',
+    name: 'BRI Transfer',
+    type: 'TRANSFER',
+    icon: '🏦',
+    color: 'blue',
+    isActive: true,
+    isDefault: false,
+  },
+  {
+    id: 'PM-MANDIRI',
+    name: 'Mandiri Transfer',
+    type: 'TRANSFER',
+    icon: '🏦',
+    color: 'yellow',
+    isActive: true,
+    isDefault: false,
+  },
+  {
+    id: 'PM-QRIS',
+    name: 'QRIS / E-Wallet',
+    type: 'TRANSFER',
+    icon: '📱',
+    color: 'violet',
+    isActive: true,
+    isDefault: false,
+  },
 ];

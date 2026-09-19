@@ -327,6 +327,102 @@ app.get('/api/cashier', async (req, res) => {
   }
 });
 
+// GET /api/payment-methods
+app.get('/api/payment-methods', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM payment_methods ORDER BY created_at ASC');
+    const methods = result.rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      icon: r.icon,
+      color: r.color,
+      isActive: r.is_active,
+      isDefault: r.is_default,
+    }));
+    res.json(methods);
+  } catch (error) {
+    console.error('Error fetching payment methods:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/payment-methods
+app.post('/api/payment-methods', async (req, res) => {
+  try {
+    const { name, type, icon, color, isActive, isDefault } = req.body;
+    const id = `PM-${Date.now().toString().slice(-4)}`;
+    const result = await pool.query(
+      `INSERT INTO payment_methods (id, name, type, icon, color, is_active, is_default)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [id, name, type, icon || '💳', color || 'sky', isActive !== false, isDefault === true]
+    );
+    const r = result.rows[0];
+    res.status(201).json({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      icon: r.icon,
+      color: r.color,
+      isActive: r.is_active,
+      isDefault: r.is_default,
+    });
+  } catch (error) {
+    console.error('Error creating payment method:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/payment-methods/:id
+app.put('/api/payment-methods/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, type, icon, color, isActive, isDefault } = req.body;
+    const result = await pool.query(
+      `UPDATE payment_methods
+       SET name = COALESCE($1, name),
+           type = COALESCE($2, type),
+           icon = COALESCE($3, icon),
+           color = COALESCE($4, color),
+           is_active = COALESCE($5, is_active),
+           is_default = COALESCE($6, is_default),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $7
+       RETURNING *`,
+      [name, type, icon, color, isActive, isDefault, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Payment method not found' });
+    }
+    const r = result.rows[0];
+    res.json({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      icon: r.icon,
+      color: r.color,
+      isActive: r.is_active,
+      isDefault: r.is_default,
+    });
+  } catch (error) {
+    console.error('Error updating payment method:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/payment-methods/:id
+app.delete('/api/payment-methods/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM payment_methods WHERE id = $1', [id]);
+    res.json({ success: true, id });
+  } catch (error) {
+    console.error('Error deleting payment method:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Start HTTP & WebSocket Server & Init DB
 const startServer = async () => {
   try {

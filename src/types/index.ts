@@ -17,9 +17,21 @@ export interface CartItem {
   note?: string;
 }
 
-export type PaymentMethod = 'TUNAI' | 'TRANSFER';
+// PaymentMethod is now a free string so cashiers can define any method name
+export type PaymentMethod = string;
 
 export type TransactionStatus = 'LUNAS' | 'MENUNGGU_KONFIRMASI' | 'BATAL';
+
+// A configured payment method entry managed by the cashier
+export interface PaymentMethodConfig {
+  id: string;
+  name: string;           // e.g. "Tunai", "BCA", "QRIS"
+  type: 'TUNAI' | 'TRANSFER'; // TUNAI = confirm directly, TRANSFER = need proof
+  icon: string;           // emoji or identifier
+  color: string;          // tailwind color accent e.g. "emerald" | "sky" | "violet"
+  isActive: boolean;
+  isDefault: boolean;     // true for the built-in Tunai — cannot be deleted
+}
 
 export interface TransactionItem {
   productId: string;
@@ -41,6 +53,7 @@ export interface Transaction {
   discount: number;
   total: number;
   paymentMethod: PaymentMethod;
+  paymentMethodType?: 'TUNAI' | 'TRANSFER'; // stored alongside for display logic
   status: TransactionStatus;
   // Tunai details
   cashGiven?: number;
@@ -61,4 +74,9 @@ export interface CashierProfile {
   outletName: string;
   outletAddress: string;
   outletPhone: string;
+}
+
+export interface CashierAuth {
+  isLoggedIn: boolean;
+  pin: string; // stored as simple base64, not for production security
 }

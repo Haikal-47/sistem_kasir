@@ -18,7 +18,8 @@ import {
   Check,
   Database,
   Smartphone,
-  CheckCircle2
+  CheckCircle2,
+  CreditCard
 } from 'lucide-react';
 
 export const TransactionPage: React.FC = () => {
@@ -38,6 +39,7 @@ export const TransactionPage: React.FC = () => {
     holdCurrentCart,
     restoreHeldCart,
     setIsCheckoutOpen,
+    setIsPaymentMethodsOpen,
     findProductByBarcode,
     isDbConnected
   } = usePOS();
@@ -470,8 +472,16 @@ export const TransactionPage: React.FC = () => {
             </span>
           </div>
 
-          {/* Hold / Recall bill */}
+          {/* Hold / Recall bill & Payment Methods */}
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsPaymentMethodsOpen(true)}
+              className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-brand-700 bg-slate-100 hover:bg-brand-50 border border-slate-200 hover:border-brand-200 px-2 py-1 rounded-lg transition-colors"
+              title="Kelola & Tambah Metode Pembayaran Kasir"
+            >
+              <CreditCard className="w-3.5 h-3.5 text-brand-600" />
+              <span className="hidden sm:inline">Metode</span>
+            </button>
             {heldCart ? (
               <button
                 onClick={restoreHeldCart}
@@ -594,6 +604,19 @@ export const TransactionPage: React.FC = () => {
               {cartDiscount > 0 && (
                 <span className="font-mono font-bold text-brand-600">-{formatRupiah(cartDiscount)}</span>
               )}
+            </div>
+
+            <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+              <span className="text-[11px] text-slate-500 font-medium">Metode Pembayaran</span>
+              <button
+                type="button"
+                onClick={() => setIsPaymentMethodsOpen(true)}
+                className="text-[11px] font-bold text-brand-600 hover:text-brand-700 hover:underline flex items-center gap-1"
+                title="Buka daftar & tambah metode pembayaran baru"
+              >
+                <CreditCard className="w-3 h-3" />
+                <span>+ Tambah Metode</span>
+              </button>
             </div>
           </div>
 

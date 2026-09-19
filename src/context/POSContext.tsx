@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Product, CartItem, Transaction, CashierProfile } from '../types';
-import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS, INITIAL_CASHIER } from '../data/initialData';
+import { Product, CartItem, Transaction, CashierProfile, PaymentMethodConfig } from '../types';
+import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS, INITIAL_CASHIER, INITIAL_PAYMENT_METHODS } from '../data/initialData';
 
 interface POSContextType {
   activeTab: 'transaksi' | 'produk' | 'riwayat' | 'dashboard';
@@ -33,11 +33,19 @@ interface POSContextType {
   
   // Transactions
   transactions: Transaction[];
-  createCashTransaction: (cashGiven: number) => Transaction;
-  createTransferTransaction: (transferBank: string, proofUrl: string, isConfirmedDirectly: boolean) => Transaction;
+  createCashTransaction: (cashGiven: number, methodName: string) => Transaction;
+  createTransferTransaction: (methodName: string, transferBank: string, proofUrl: string, isConfirmedDirectly: boolean) => Transaction;
   confirmTransferPayment: (transactionId: string) => void;
   cancelTransaction: (transactionId: string) => void;
   pendingConfirmations: Transaction[];
+  
+  // Payment Methods
+  paymentMethods: PaymentMethodConfig[];
+  addPaymentMethod: (method: Omit<PaymentMethodConfig, 'id'>) => void;
+  updatePaymentMethod: (id: string, updates: Partial<PaymentMethodConfig>) => void;
+  deletePaymentMethod: (id: string) => void;
+  isPaymentMethodsOpen: boolean;
+  setIsPaymentMethodsOpen: (open: boolean) => void;
   
   // Struk / Receipt Modal
   selectedReceipt: Transaction | null;
@@ -95,19 +103,29 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return [];
   });
 
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodConfig[]>(() => {
+    const saved = localStorage.getItem('pos_payment_methods');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    }
+    return INITIAL_PAYMENT_METHODS;
+  });
+
   const [heldCart, setHeldCart] = useState<CartItem[] | null>(null);
   const [cartDiscount, setCartDiscount] = useState<number>(0);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
+  const [isPaymentMethodsOpen, setIsPaymentMethodsOpen] = useState<boolean>(false);
   const [selectedReceipt, setSelectedReceipt] = useState<Transaction | null>(null);
 
   // Initial fetch from Neon DB backend API
   useEffect(() => {
     const loadFromNeonDb = async () => {
       try {
-        const [prodRes, txRes, cashierRes] = await Promise.all([
+        const [prodRes, txRes, cashierRes, pmRes] = await Promise.all([
           fetch('/api/products'),
           fetch('/api/transactions'),
           fetch('/api/cashier'),
+          fetch('/api/payment-methods'),
         ]);
 
         if (prodRes.ok && txRes.ok) {
@@ -123,6 +141,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const cashierData = await cashierRes.json();
             if (cashierData && cashierData.name) {
               setCashier(cashierData);
+            }
+          }
+          if (pmRes.ok) {
+            const pmData = await pmRes.json();
+            if (Array.isArray(pmData) && pmData.length > 0) {
+              setPaymentMethods(pmData);
             }
           }
           setIsDbConnected(true);
@@ -152,6 +176,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('pos_cart', JSON.stringify(cart));
   }, [cart]);
+
+  useEffect(() => {
+    localStorage.setItem('pos_payment_methods', JSON.stringify(paymentMethods));
+  }, [paymentMethods]);
 
   // Audio tone generator for realistic scanner beep
   const playBeep = () => {
@@ -248,7 +276,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setProducts(prev => [newProduct, ...prev]);
 
-    // Send to Neon PostgreSQL
     fetch('/api/products', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -271,7 +298,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    // Send update to Neon PostgreSQL
     fetch(`/api/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -283,7 +309,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProducts(prev => prev.filter(p => p.id !== id));
     removeFromCart(id);
 
-    // Send delete to Neon PostgreSQL
     fetch(`/api/products/${id}`, {
       method: 'DELETE',
     }).catch(err => console.error('Failed to delete product from Neon DB:', err));
@@ -292,6 +317,39 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const findProductByBarcode = (barcode: string) => {
     const cleanCode = barcode.trim().toLowerCase();
     return products.find(p => p.barcode.toLowerCase() === cleanCode);
+  };
+
+  // Payment Method operations
+  const addPaymentMethod = (data: Omit<PaymentMethodConfig, 'id'>) => {
+    const newMethod: PaymentMethodConfig = {
+      ...data,
+      id: `PM-${Date.now().toString().slice(-6)}`,
+    };
+    setPaymentMethods(prev => [...prev, newMethod]);
+
+    fetch('/api/payment-methods', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newMethod),
+    }).catch(err => console.error('Failed to sync payment method:', err));
+  };
+
+  const updatePaymentMethod = (id: string, updates: Partial<PaymentMethodConfig>) => {
+    setPaymentMethods(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+
+    fetch(`/api/payment-methods/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    }).catch(err => console.error('Failed to update payment method:', err));
+  };
+
+  const deletePaymentMethod = (id: string) => {
+    setPaymentMethods(prev => prev.filter(m => m.id !== id));
+
+    fetch(`/api/payment-methods/${id}`, {
+      method: 'DELETE',
+    }).catch(err => console.error('Failed to delete payment method:', err));
   };
 
   const deductStock = (items: { productId: string; quantity: number }[]) => {
@@ -313,8 +371,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return `INV/${dateStr}/${rand}`;
   };
 
-  // Cash payment creation
-  const createCashTransaction = (cashGiven: number): Transaction => {
+  // Cash payment creation — now accepts method name for flexibility
+  const createCashTransaction = (cashGiven: number, methodName: string = 'Tunai'): Transaction => {
     const items = cart.map(item => ({
       productId: item.product.id,
       name: item.product.name,
@@ -335,7 +393,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       tax: 0,
       discount: cartDiscount,
       total: cartTotal,
-      paymentMethod: 'TUNAI',
+      paymentMethod: methodName,
+      paymentMethodType: 'TUNAI',
       status: 'LUNAS',
       cashGiven,
       changeAmount,
@@ -347,7 +406,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsCheckoutOpen(false);
     setSelectedReceipt(newTx);
 
-    // Save to Neon PostgreSQL
     fetch('/api/transactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -357,8 +415,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newTx;
   };
 
-  // Transfer payment creation
+  // Transfer payment creation — now accepts method name
   const createTransferTransaction = (
+    methodName: string,
     transferBank: string,
     proofUrl: string,
     isConfirmedDirectly: boolean
@@ -383,7 +442,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       tax: 0,
       discount: cartDiscount,
       total: cartTotal,
-      paymentMethod: 'TRANSFER',
+      paymentMethod: methodName,
+      paymentMethodType: 'TRANSFER',
       status: isConfirmedDirectly ? 'LUNAS' : 'MENUNGGU_KONFIRMASI',
       transferBank,
       transferProofUrl: proofUrl,
@@ -401,7 +461,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSelectedReceipt(newTx);
     }
 
-    // Save to Neon PostgreSQL
     fetch('/api/transactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -411,7 +470,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newTx;
   };
 
-  // Cashier confirms pending transfer payment
   const confirmTransferPayment = (transactionId: string) => {
     const now = new Date().toISOString();
     setTransactions(prev =>
@@ -429,7 +487,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    // Sync to Neon PostgreSQL
     fetch(`/api/transactions/${transactionId}/confirm`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -452,7 +509,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    // Sync to Neon PostgreSQL
     fetch(`/api/transactions/${transactionId}/cancel`, {
       method: 'PATCH',
     }).catch(err => console.error('Failed to cancel transaction in Neon DB:', err));
@@ -471,9 +527,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem('pos_transactions');
     localStorage.removeItem('pos_cashier');
     localStorage.removeItem('pos_cart');
+    localStorage.removeItem('pos_payment_methods');
     setProducts(INITIAL_PRODUCTS);
     setTransactions(INITIAL_TRANSACTIONS);
     setCashier(INITIAL_CASHIER);
+    setPaymentMethods(INITIAL_PAYMENT_METHODS);
     setCart([]);
     setCartDiscount(0);
     setHeldCart(null);
@@ -509,6 +567,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         confirmTransferPayment,
         cancelTransaction,
         pendingConfirmations,
+        paymentMethods,
+        addPaymentMethod,
+        updatePaymentMethod,
+        deletePaymentMethod,
+        isPaymentMethodsOpen,
+        setIsPaymentMethodsOpen,
         selectedReceipt,
         setSelectedReceipt,
         isCheckoutOpen,

@@ -61,6 +61,42 @@ export const initDatabase = async () => {
       );
     `);
 
+    // 4. Payment Methods Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS payment_methods (
+        id VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        type VARCHAR(20) NOT NULL,
+        icon VARCHAR(20) DEFAULT '💳',
+        color VARCHAR(20) DEFAULT 'sky',
+        is_active BOOLEAN DEFAULT TRUE,
+        is_default BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Seed payment methods if empty
+    const pmCheck = await client.query(`SELECT COUNT(*) FROM payment_methods`);
+    if (parseInt(pmCheck.rows[0].count, 10) === 0) {
+      const defaultMethods = [
+        ['PM-001', 'Tunai', 'TUNAI', '💵', 'emerald', true, true],
+        ['PM-002', 'BCA Transfer', 'TRANSFER', '🏦', 'sky', true, false],
+        ['PM-003', 'BNI Transfer', 'TRANSFER', '🏦', 'orange', true, false],
+        ['PM-004', 'BRI Transfer', 'TRANSFER', '🏦', 'blue', true, false],
+        ['PM-005', 'Mandiri Livin', 'TRANSFER', '🏦', 'yellow', true, false],
+        ['PM-006', 'QRIS', 'TRANSFER', '📱', 'rose', true, false],
+      ];
+      for (const m of defaultMethods) {
+        await client.query(`
+          INSERT INTO payment_methods (id, name, type, icon, color, is_active, is_default)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (id) DO NOTHING;
+        `, m);
+      }
+      console.log('✅ Default payment methods berhasil di-seed');
+    }
+
     // Seed cashier if not exists
     const cashierCheck = await client.query(`SELECT COUNT(*) FROM cashier_profile`);
     if (parseInt(cashierCheck.rows[0].count, 10) === 0) {
