@@ -339,6 +339,10 @@ app.get('/api/payment-methods', async (req, res) => {
       color: r.color,
       isActive: r.is_active,
       isDefault: r.is_default,
+      bankName: r.bank_name || '',
+      accountNumber: r.account_number || '',
+      accountHolder: r.account_holder || '',
+      description: r.description || '',
     }));
     res.json(methods);
   } catch (error) {
@@ -350,13 +354,13 @@ app.get('/api/payment-methods', async (req, res) => {
 // POST /api/payment-methods
 app.post('/api/payment-methods', async (req, res) => {
   try {
-    const { name, type, icon, color, isActive, isDefault } = req.body;
+    const { name, type, icon, color, isActive, isDefault, bankName, accountNumber, accountHolder, description } = req.body;
     const id = `PM-${Date.now().toString().slice(-4)}`;
     const result = await pool.query(
-      `INSERT INTO payment_methods (id, name, type, icon, color, is_active, is_default)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO payment_methods (id, name, type, icon, color, is_active, is_default, bank_name, account_number, account_holder, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
-      [id, name, type, icon || '💳', color || 'sky', isActive !== false, isDefault === true]
+      [id, name, type, icon || '💳', color || 'sky', isActive !== false, isDefault === true, bankName || '', accountNumber || '', accountHolder || '', description || '']
     );
     const r = result.rows[0];
     res.status(201).json({
@@ -367,6 +371,10 @@ app.post('/api/payment-methods', async (req, res) => {
       color: r.color,
       isActive: r.is_active,
       isDefault: r.is_default,
+      bankName: r.bank_name || '',
+      accountNumber: r.account_number || '',
+      accountHolder: r.account_holder || '',
+      description: r.description || '',
     });
   } catch (error) {
     console.error('Error creating payment method:', error);
@@ -378,7 +386,7 @@ app.post('/api/payment-methods', async (req, res) => {
 app.put('/api/payment-methods/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, type, icon, color, isActive, isDefault } = req.body;
+    const { name, type, icon, color, isActive, isDefault, bankName, accountNumber, accountHolder, description } = req.body;
     const result = await pool.query(
       `UPDATE payment_methods
        SET name = COALESCE($1, name),
@@ -387,10 +395,14 @@ app.put('/api/payment-methods/:id', async (req, res) => {
            color = COALESCE($4, color),
            is_active = COALESCE($5, is_active),
            is_default = COALESCE($6, is_default),
+           bank_name = COALESCE($7, bank_name),
+           account_number = COALESCE($8, account_number),
+           account_holder = COALESCE($9, account_holder),
+           description = COALESCE($10, description),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7
+       WHERE id = $11
        RETURNING *`,
-      [name, type, icon, color, isActive, isDefault, id]
+      [name, type, icon, color, isActive, isDefault, bankName, accountNumber, accountHolder, description, id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Payment method not found' });
@@ -404,6 +416,10 @@ app.put('/api/payment-methods/:id', async (req, res) => {
       color: r.color,
       isActive: r.is_active,
       isDefault: r.is_default,
+      bankName: r.bank_name || '',
+      accountNumber: r.account_number || '',
+      accountHolder: r.account_holder || '',
+      description: r.description || '',
     });
   } catch (error) {
     console.error('Error updating payment method:', error);

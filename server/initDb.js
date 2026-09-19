@@ -71,30 +71,51 @@ export const initDatabase = async () => {
         color VARCHAR(20) DEFAULT 'sky',
         is_active BOOLEAN DEFAULT TRUE,
         is_default BOOLEAN DEFAULT FALSE,
+        bank_name VARCHAR(100),
+        account_number VARCHAR(100),
+        account_holder VARCHAR(150),
+        description TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    // Ensure columns exist if table was already created
+    await client.query(`
+      ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);
+      ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS account_number VARCHAR(100);
+      ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS account_holder VARCHAR(150);
+      ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS description TEXT;
     `);
 
     // Seed payment methods if empty
     const pmCheck = await client.query(`SELECT COUNT(*) FROM payment_methods`);
     if (parseInt(pmCheck.rows[0].count, 10) === 0) {
       const defaultMethods = [
-        ['PM-001', 'Tunai', 'TUNAI', '💵', 'emerald', true, true],
-        ['PM-002', 'BCA Transfer', 'TRANSFER', '🏦', 'sky', true, false],
-        ['PM-003', 'BNI Transfer', 'TRANSFER', '🏦', 'orange', true, false],
-        ['PM-004', 'BRI Transfer', 'TRANSFER', '🏦', 'blue', true, false],
-        ['PM-005', 'Mandiri Livin', 'TRANSFER', '🏦', 'yellow', true, false],
-        ['PM-006', 'QRIS', 'TRANSFER', '📱', 'rose', true, false],
+        ['PM-001', 'Tunai', 'TUNAI', '💵', 'emerald', true, true, '', '', '', 'Pembayaran tunai langsung di meja kasir'],
+        ['PM-002', 'BCA Transfer', 'TRANSFER', '🏦', 'sky', true, false, 'Bank Central Asia (BCA)', '8820 4912 3901', 'Kasir Kita Pro', 'Verifikasi mutasi m-banking BCA otomatis / manual'],
+        ['PM-003', 'BNI Transfer', 'TRANSFER', '🏦', 'orange', true, false, 'Bank Negara Indonesia (BNI)', '0391 2847 10', 'Kasir Kita Pro', 'Transfer via BNI Mobile Banking / ATM'],
+        ['PM-004', 'BRI Transfer', 'TRANSFER', '🏦', 'blue', true, false, 'Bank Rakyat Indonesia (BRI)', '1029 0100 4819 501', 'Kasir Kita Pro', 'Transfer via aplikasi BRImo'],
+        ['PM-005', 'Mandiri Livin', 'TRANSFER', '🏦', 'yellow', true, false, 'Bank Mandiri', '1370 0192 4819 2', 'Kasir Kita Pro', 'Transfer via Livin by Mandiri'],
+        ['PM-006', 'QRIS Kasir', 'TRANSFER', '📱', 'rose', true, false, 'QRIS Multi-Payment', 'NMD-881920194', 'Kasir Kita Pro', 'Scan QRIS statis kasir dengan GoPay, OVO, ShopeePay, DANA'],
       ];
       for (const m of defaultMethods) {
         await client.query(`
-          INSERT INTO payment_methods (id, name, type, icon, color, is_active, is_default)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          INSERT INTO payment_methods (id, name, type, icon, color, is_active, is_default, bank_name, account_number, account_holder, description)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           ON CONFLICT (id) DO NOTHING;
         `, m);
       }
       console.log('✅ Default payment methods berhasil di-seed');
+    } else {
+      // Update existing records with default details if they are empty
+      await client.query(`
+        UPDATE payment_methods SET bank_name = 'Bank Central Asia (BCA)', account_number = '8820 4912 3901', account_holder = 'Kasir Kita Pro', description = 'Verifikasi mutasi m-banking BCA' WHERE id = 'PM-002' AND (bank_name IS NULL OR bank_name = '');
+        UPDATE payment_methods SET bank_name = 'Bank Negara Indonesia (BNI)', account_number = '0391 2847 10', account_holder = 'Kasir Kita Pro', description = 'Transfer via BNI Mobile Banking' WHERE id = 'PM-003' AND (bank_name IS NULL OR bank_name = '');
+        UPDATE payment_methods SET bank_name = 'Bank Rakyat Indonesia (BRI)', account_number = '1029 0100 4819 501', account_holder = 'Kasir Kita Pro', description = 'Transfer via aplikasi BRImo' WHERE id = 'PM-004' AND (bank_name IS NULL OR bank_name = '');
+        UPDATE payment_methods SET bank_name = 'Bank Mandiri', account_number = '1370 0192 4819 2', account_holder = 'Kasir Kita Pro', description = 'Transfer via Livin by Mandiri' WHERE id = 'PM-005' AND (bank_name IS NULL OR bank_name = '');
+        UPDATE payment_methods SET bank_name = 'QRIS Multi-Payment', account_number = 'NMD-881920194', account_holder = 'Kasir Kita Pro', description = 'Scan QRIS dari semua e-wallet & m-banking' WHERE id = 'PM-006' AND (bank_name IS NULL OR bank_name = '');
+      `);
     }
 
     // Seed cashier if not exists

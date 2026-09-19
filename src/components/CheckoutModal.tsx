@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Plus,
   Settings,
+  Building2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -323,6 +324,50 @@ export const CheckoutModal: React.FC = () => {
                   <div className="text-[11px] text-slate-500">Kasir perlu verifikasi bukti transfer dari pelanggan</div>
                 </div>
               </div>
+
+              {/* Bank Account Details Card */}
+              {(selectedMethod.bankName || selectedMethod.accountNumber || selectedMethod.description) && (
+                <div className="p-3.5 rounded-2xl bg-sky-50/80 border border-sky-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-sky-900 flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-sky-600" />
+                      <span>{selectedMethod.bankName || selectedMethod.name}</span>
+                    </span>
+                    {selectedMethod.accountHolder && (
+                      <span className="text-[11px] text-sky-700 font-medium">
+                        A/N: <strong>{selectedMethod.accountHolder}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  {selectedMethod.accountNumber && (
+                    <div className="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-sky-200">
+                      <div>
+                        <p className="text-[10px] text-slate-400 font-semibold uppercase">Nomor Rekening / VA</p>
+                        <p className="text-sm font-mono font-black text-slate-900 tracking-wider">
+                          {selectedMethod.accountNumber}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedMethod.accountNumber!);
+                          alert(`Nomor rekening ${selectedMethod.accountNumber} berhasil disalin!`);
+                        }}
+                        className="text-xs font-bold text-sky-700 hover:text-sky-800 bg-sky-100 hover:bg-sky-200 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        Salin No. Rek
+                      </button>
+                    </div>
+                  )}
+
+                  {selectedMethod.description && (
+                    <p className="text-[11px] text-sky-800/90 leading-tight">
+                      💡 {selectedMethod.description}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Cashier Verification Box */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">

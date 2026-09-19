@@ -31,6 +31,10 @@ export interface PaymentMethodConfig {
   color: string;          // tailwind color accent e.g. "emerald" | "sky" | "violet"
   isActive: boolean;
   isDefault: boolean;     // true for the built-in Tunai — cannot be deleted
+  bankName?: string;      // e.g. "Bank Central Asia (BCA)"
+  accountNumber?: string; // e.g. "8820 4912 3901"
+  accountHolder?: string; // e.g. "Kasir Kita Pro"
+  description?: string;   // e.g. "Verifikasi mutasi m-banking"
 }
 
 export interface TransactionItem {

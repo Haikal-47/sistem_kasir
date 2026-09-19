@@ -30,11 +30,13 @@ export const Header: React.FC = () => {
       <header className="h-14 bg-white border-b border-slate-200 px-3 md:px-6 flex items-center justify-between shadow-xs shrink-0 z-20">
         {/* Left: Outlet & Station Name */}
         <div className="flex items-center gap-2 md:gap-3 min-w-0">
+          <img src="/logo.png" alt="Kasir Kita" className="w-7 h-7 object-contain shrink-0" />
           <div className="flex items-baseline gap-1.5 min-w-0">
             <h1 className="text-sm md:text-base font-bold text-slate-900 tracking-tight truncate">
               {cashier.outletName}
             </h1>
-            <span className="text-xs text-slate-600 font-mono hidden md:inline">Terminal #01</span>
+            <span className="text-xs text-brand-600 font-bold hidden md:inline">Kasir Kita</span>
+            <span className="text-xs text-slate-400 font-mono hidden md:inline">• Terminal #01</span>
           </div>
 
           <div className="h-4 w-px bg-slate-200 mx-0.5 hidden md:block" />

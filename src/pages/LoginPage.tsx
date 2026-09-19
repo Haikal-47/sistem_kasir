@@ -107,14 +107,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
         {/* Header */}
         <div className="px-8 pt-8 pb-6 text-center border-b border-slate-800">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600 shadow-xl shadow-brand-600/30 mb-4">
-            <Store className="w-8 h-8 text-white" />
+          <div className="flex justify-center mb-3">
+            <img 
+              src="/logo.png" 
+              alt="Kasir Kita" 
+              className="w-20 h-20 object-contain hover:scale-105 transition-transform" 
+            />
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight">
-            {cashier.outletName || 'POS PRO'}
+            Kasir Kita
           </h1>
-          <p className="text-sm text-slate-400 mt-1 font-medium">
-            Sistem Kasir Digital — Login Kasir
+          <p className="text-xs text-brand-400 font-semibold tracking-wider uppercase mt-0.5">
+            {cashier.outletName || 'MINIMARKET KASIR PRO'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1 font-medium">
+            Masuk ke terminal kasir untuk memulai transaksi
           </p>
         </div>
 

@@ -51,6 +51,10 @@ const EMPTY_FORM = {
   color: 'sky',
   isActive: true,
   isDefault: false,
+  bankName: '',
+  accountNumber: '',
+  accountHolder: '',
+  description: '',
 };
 
 export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen, onClose }) => {
@@ -79,6 +83,10 @@ export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen
       color: m.color,
       isActive: m.isActive,
       isDefault: m.isDefault,
+      bankName: m.bankName || '',
+      accountNumber: m.accountNumber || '',
+      accountHolder: m.accountHolder || '',
+      description: m.description || '',
     });
     setFormError('');
     setShowForm(true);
@@ -283,6 +291,55 @@ export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen
                     </div>
                   </button>
                 </div>
+              </div>
+
+              {/* Bank & Account Info */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Nama Bank / Provider</label>
+                    <input
+                      type="text"
+                      value={form.bankName}
+                      onChange={(e) => setForm(f => ({ ...f, bankName: e.target.value }))}
+                      placeholder="Contoh: Bank BCA"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 focus:border-brand-500 rounded-lg text-xs outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Nomor Rekening / VA</label>
+                    <input
+                      type="text"
+                      value={form.accountNumber}
+                      onChange={(e) => setForm(f => ({ ...f, accountNumber: e.target.value }))}
+                      placeholder="Contoh: 8820 4912 3901"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 focus:border-brand-500 rounded-lg text-xs font-mono outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">Nama Pemilik Rekening (A/N)</label>
+                  <input
+                    type="text"
+                    value={form.accountHolder}
+                    onChange={(e) => setForm(f => ({ ...f, accountHolder: e.target.value }))}
+                    placeholder="Contoh: Kasir Kita Pro"
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 focus:border-brand-500 rounded-lg text-xs outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Keterangan / Petunjuk Pembayaran</label>
+                <input
+                  type="text"
+                  value={form.description}
+                  onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="Contoh: Verifikasi mutasi m-banking otomatis"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 focus:border-brand-500 rounded-xl text-xs outline-none"
+                />
               </div>
 
               {/* Icon */}

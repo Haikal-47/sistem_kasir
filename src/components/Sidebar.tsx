@@ -63,12 +63,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
     <>
       {/* ===== DESKTOP SIDEBAR (hidden on mobile) ===== */}
       <aside className="hidden md:flex w-20 bg-slate-900 text-slate-300 flex-col justify-between items-center py-4 border-r border-slate-800 select-none z-30 shrink-0">
-        {/* Brand Icon */}
-        <div className="flex flex-col items-center gap-1">
-          <div className="w-12 h-12 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-lg shadow-brand-600/30 font-bold">
-            <Store className="w-6 h-6" />
-          </div>
-          <span className="text-[10px] tracking-wider uppercase font-extrabold text-brand-400 mt-1">POS PRO</span>
+        {/* Brand Icon & Logo */}
+        <div className="flex flex-col items-center gap-1 cursor-pointer" onClick={() => setActiveTab('transaksi')} title="Kasir Kita POS">
+          <img 
+            src="/logo.png" 
+            alt="Kasir Kita" 
+            className="w-11 h-11 object-contain hover:scale-105 transition-transform" 
+          />
+          <span className="text-[9px] tracking-wider uppercase font-black text-brand-400 mt-0.5">KASIR KITA</span>
         </div>
 
         {/* Nav Menu */}
