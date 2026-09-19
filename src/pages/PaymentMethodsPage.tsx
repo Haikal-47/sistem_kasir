@@ -489,8 +489,14 @@ export const PaymentMethodsPage: React.FC = () => {
 
       {/* ================= MODAL TAMBAH / EDIT METODE (LENGKAP) ================= */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-60 p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[92vh]">
+        <div 
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          style={{ zIndex: 9999 }}
+        >
+          <div 
+            className="bg-white rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[92vh] relative"
+            style={{ zIndex: 10000 }}
+          >
             
             {/* Modal Header */}
             <div className="p-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
@@ -508,6 +514,7 @@ export const PaymentMethodsPage: React.FC = () => {
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-colors"
               >
@@ -516,7 +523,7 @@ export const PaymentMethodsPage: React.FC = () => {
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSaveForm} className="p-6 overflow-y-auto flex-1 space-y-4">
+            <form onSubmit={handleSaveForm} className="p-6 overflow-y-auto flex-1 space-y-4 bg-white">
               
               {errorMessage && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
@@ -536,7 +543,7 @@ export const PaymentMethodsPage: React.FC = () => {
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     placeholder="Contoh: BCA Transfer, QRIS, GoPay"
-                    className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-brand-600 outline-hidden transition-all"
+                    className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-300 rounded-xl focus:border-brand-600 focus:ring-2 focus:ring-brand-500/20 outline-hidden transition-all shadow-2xs text-slate-900 font-medium"
                     autoFocus
                   />
                 </div>
@@ -552,10 +559,10 @@ export const PaymentMethodsPage: React.FC = () => {
                         setFormType('TUNAI');
                         if (formIcon === '🏦') setFormIcon('💵');
                       }}
-                      className={`py-2 px-2.5 rounded-xl border text-center font-bold text-xs transition-all ${
+                      className={`py-2.5 px-2.5 rounded-xl border text-center font-bold text-xs transition-all ${
                         formType === 'TUNAI'
-                          ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-1 ring-emerald-500'
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-2 ring-emerald-400/40 shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
                       💵 Tunai Langsung
@@ -567,10 +574,10 @@ export const PaymentMethodsPage: React.FC = () => {
                         setFormType('TRANSFER');
                         if (formIcon === '💵') setFormIcon('🏦');
                       }}
-                      className={`py-2 px-2.5 rounded-xl border text-center font-bold text-xs transition-all ${
+                      className={`py-2.5 px-2.5 rounded-xl border text-center font-bold text-xs transition-all ${
                         formType === 'TRANSFER'
-                          ? 'bg-sky-50 border-sky-500 text-sky-900 ring-1 ring-sky-500'
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                          ? 'bg-sky-50 border-sky-500 text-sky-900 ring-2 ring-sky-400/40 shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
                       🏦 Transfer / QRIS
@@ -580,7 +587,7 @@ export const PaymentMethodsPage: React.FC = () => {
               </div>
 
               {/* 2. Informasi Bank & Rekening (Hanya relevan jika Transfer / Non-tunai) */}
-              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3">
+              <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200 space-y-3">
                 <div className="flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-brand-600" />
                   <p className="text-xs font-bold text-slate-800">
@@ -598,7 +605,7 @@ export const PaymentMethodsPage: React.FC = () => {
                       value={formBankName}
                       onChange={(e) => setFormBankName(e.target.value)}
                       placeholder="Contoh: Bank Central Asia (BCA)"
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:border-brand-600 outline-hidden transition-all"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:border-brand-600 focus:ring-2 focus:ring-brand-500/20 outline-hidden transition-all shadow-2xs text-slate-900 font-medium"
                     />
                   </div>
 
@@ -611,7 +618,7 @@ export const PaymentMethodsPage: React.FC = () => {
                       value={formAccountNumber}
                       onChange={(e) => setFormAccountNumber(e.target.value)}
                       placeholder="Contoh: 8820 4912 3901"
-                      className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-xl focus:border-brand-600 outline-hidden transition-all"
+                      className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-300 rounded-xl focus:border-brand-600 focus:ring-2 focus:ring-brand-500/20 outline-hidden transition-all shadow-2xs text-slate-900 font-bold tracking-wider"
                     />
                   </div>
                 </div>
@@ -625,7 +632,7 @@ export const PaymentMethodsPage: React.FC = () => {
                     value={formAccountHolder}
                     onChange={(e) => setFormAccountHolder(e.target.value)}
                     placeholder="Contoh: Kasir Kita Pro / PT Toko Retail"
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:border-brand-600 outline-hidden transition-all"
+                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:border-brand-600 focus:ring-2 focus:ring-brand-500/20 outline-hidden transition-all shadow-2xs text-slate-900 font-medium"
                   />
                 </div>
               </div>
@@ -641,7 +648,7 @@ export const PaymentMethodsPage: React.FC = () => {
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   placeholder="Contoh: Verifikasi bukti mutasi via m-banking, scan QRIS statis kasir, atau bebas biaya admin"
-                  className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-brand-600 outline-hidden transition-all resize-none"
+                  className="w-full px-3.5 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:border-brand-600 focus:ring-2 focus:ring-brand-500/20 outline-hidden transition-all resize-none shadow-2xs text-slate-800"
                 />
               </div>
 

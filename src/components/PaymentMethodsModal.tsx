@@ -126,8 +126,14 @@ export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen
   const ICON_OPTIONS = ['💵', '🏦', '📱', '💳', '🔑', '🪙', '💰', '🎫'];
 
   return (
-    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-60 p-4 animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+    <div 
+      className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+      style={{ zIndex: 9999 }}
+    >
+      <div 
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] relative"
+        style={{ zIndex: 10000 }}
+      >
         
         {/* Header */}
         <div className="p-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
