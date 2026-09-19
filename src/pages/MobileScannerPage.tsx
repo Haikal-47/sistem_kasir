@@ -37,11 +37,10 @@ export const MobileScannerPage: React.FC = () => {
     const session = params.get('session') || 'DEFAULT';
     setSessionCode(session);
 
-    // Setup WebSocket connection
+    // Setup WebSocket connection - use same host/port as current page (goes through Vite proxy /ws)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Use ws on backend port 3001 if direct or proxy /ws
-    const wsHost = window.location.hostname;
-    const wsUrl = `${protocol}//${wsHost}:3001/ws`;
+    const wsHost = window.location.host; // includes port if any (e.g. 192.168.1.x:5173)
+    const wsUrl = `${protocol}//${wsHost}/ws`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -120,7 +119,14 @@ export const MobileScannerPage: React.FC = () => {
       .catch((err) => {
         if (!isMounted) return;
         console.error('Camera access error:', err);
-        setScannerError('Izinkan akses kamera di browser HP Anda.');
+        const isHttp = window.location.protocol === 'http:' && window.location.hostname !== 'localhost';
+        if (isHttp) {
+          setScannerError(
+            'Kamera diblokir browser karena koneksi HTTP. Buka URL ini via HTTPS atau gunakan fitur input manual di bawah untuk ketik barcode.'
+          );
+        } else {
+          setScannerError('Izinkan akses kamera: buka Pengaturan browser → Izin → Kamera → Izinkan untuk situs ini.');
+        }
       });
 
     return () => {
@@ -186,7 +192,12 @@ export const MobileScannerPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Scanner init error:', err);
-      setScannerError('Gagal membuka kamera. Periksa izin kamera HP Anda.');
+      const isHttp = window.location.protocol === 'http:' && window.location.hostname !== 'localhost';
+      setScannerError(
+        isHttp
+          ? 'Kamera tidak bisa dibuka via HTTP. Gunakan input manual di bawah, atau minta kasir aktifkan HTTPS.'
+          : 'Gagal membuka kamera. Pastikan izin kamera sudah diberikan dan tidak dipakai aplikasi lain.'
+      );
     }
   };
 

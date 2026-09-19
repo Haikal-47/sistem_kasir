@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, X, ExternalLink, CheckCircle2, Wifi, Copy, Check } from 'lucide-react';
+import { Smartphone, X, ExternalLink, CheckCircle2, Wifi, Copy, Check, AlertTriangle, Info } from 'lucide-react';
 
 interface MobilePairingModalProps {
   isOpen: boolean;
@@ -48,6 +48,9 @@ export const MobilePairingModal: React.FC<MobilePairingModalProps> = ({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  // Detect if we're serving over HTTP (camera will be blocked on mobile)
+  const isHttpAccess = window.location.protocol === 'http:' && networkIp && networkIp !== 'localhost';
 
   return (
     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
@@ -122,8 +125,44 @@ export const MobilePairingModal: React.FC<MobilePairingModalProps> = ({
             </button>
           </div>
 
+          {/* Warning: HTTP blocks camera */}
+          {isHttpAccess && (
+            <div className="w-full bg-amber-50 border border-amber-300 rounded-xl p-3 text-left space-y-1.5">
+              <div className="flex items-center gap-1.5 text-amber-800">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span className="text-xs font-bold">Kamera HP Butuh HTTPS</span>
+              </div>
+              <p className="text-[11px] text-amber-700 leading-relaxed">
+                Browser HP modern memblokir akses kamera di koneksi <strong>HTTP</strong>. Gunakan salah satu solusi:
+              </p>
+              <ul className="text-[11px] text-amber-700 space-y-1 list-disc list-inside">
+                <li>Pakai <strong>Chrome di Android</strong> → Buka menu ⋮ → <em>"Izin situs"</em> → aktifkan Kamera</li>
+                <li>Ketik barcode <strong>manual</strong> di kolom bawah halaman scanner</li>
+                <li>Atau aktifkan HTTPS di vite config (hubungi developer)</li>
+              </ul>
+            </div>
+          )}
+
+          {/* Step-by-step guide */}
+          <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-left space-y-2">
+            <div className="flex items-center gap-1.5 text-slate-700">
+              <Info className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+              <span className="text-xs font-bold text-slate-800">Cara Pakai Scanner HP</span>
+            </div>
+            <ol className="text-[11px] text-slate-600 space-y-1.5 list-decimal list-inside leading-relaxed">
+              <li>Pastikan HP & laptop terhubung ke <strong>WiFi yang sama</strong></li>
+              <li>Scan QR Code di atas, atau buka URL yang tersedia di browser HP</li>
+              <li>Izinkan akses kamera saat browser meminta</li>
+              <li>Arahkan kamera HP ke barcode produk dalam kotak pemindai</li>
+              <li>Produk otomatis masuk keranjang di laptop kasir</li>
+            </ol>
+            <p className="text-[11px] text-slate-500 italic mt-1">
+              Tidak ada kamera? Ketik barcode manual di kolom bawah halaman scanner.
+            </p>
+          </div>
+
           {/* Local testing link (opens in new tab) */}
-          <div className="pt-2 border-t border-slate-100 w-full">
+          <div className="pt-1 border-t border-slate-100 w-full">
             <a
               href={localTestUrl}
               target="_blank"
