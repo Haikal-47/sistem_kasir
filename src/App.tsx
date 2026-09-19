@@ -11,6 +11,7 @@ import { LoginPage } from './pages/LoginPage';
 import { CheckoutModal } from './components/CheckoutModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { PaymentMethodsModal } from './components/PaymentMethodsModal';
+import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
 
 export const App: React.FC = () => {
   const { activeTab, setActiveTab, isPaymentMethodsOpen, setIsPaymentMethodsOpen } = usePOS();
@@ -58,6 +59,11 @@ export const App: React.FC = () => {
         e.preventDefault();
         setActiveTab('riwayat');
       }
+      // F5 -> Metode Pembayaran
+      else if (e.key === 'F5') {
+        e.preventDefault();
+        setActiveTab('metode');
+      }
     };
 
     window.addEventListener('keydown', handleGlobalKeys);
@@ -90,6 +96,7 @@ export const App: React.FC = () => {
           {activeTab === 'dashboard' && <DashboardPage />}
           {activeTab === 'produk' && <ProductsPage />}
           {activeTab === 'riwayat' && <HistoryPage />}
+          {activeTab === 'metode' && <PaymentMethodsPage />}
         </main>
       </div>
 

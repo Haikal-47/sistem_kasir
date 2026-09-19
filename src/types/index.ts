@@ -80,3 +80,6 @@ export interface CashierAuth {
   isLoggedIn: boolean;
   pin: string; // stored as simple base64, not for production security
 }
+
+export type ActiveTab = 'transaksi' | 'dashboard' | 'produk' | 'riwayat' | 'metode';
+

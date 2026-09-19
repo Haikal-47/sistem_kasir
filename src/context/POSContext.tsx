@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Product, CartItem, Transaction, CashierProfile, PaymentMethodConfig } from '../types';
+import { Product, CartItem, Transaction, CashierProfile, PaymentMethodConfig, ActiveTab } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS, INITIAL_CASHIER, INITIAL_PAYMENT_METHODS } from '../data/initialData';
 
 interface POSContextType {
-  activeTab: 'transaksi' | 'produk' | 'riwayat' | 'dashboard';
-  setActiveTab: (tab: 'transaksi' | 'produk' | 'riwayat' | 'dashboard') => void;
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
   
   // Database connection indicator
   isDbConnected: boolean;
@@ -67,7 +67,7 @@ interface POSContextType {
 const POSContext = createContext<POSContextType | undefined>(undefined);
 
 export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState<'transaksi' | 'produk' | 'riwayat' | 'dashboard'>('transaksi');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('transaksi');
   const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
 
   // Load from localStorage or initial fallback

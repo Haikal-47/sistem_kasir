@@ -8,7 +8,8 @@ import {
   UserCircle2, 
   RotateCcw,
   Store,
-  LogOut
+  LogOut,
+  CreditCard
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -43,6 +44,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
       label: 'Riwayat',
       icon: Receipt,
       shortcut: 'F4',
+    },
+    {
+      id: 'metode' as const,
+      label: 'Metode',
+      icon: CreditCard,
+      shortcut: 'F5',
     },
   ];
 
