@@ -37,10 +37,18 @@ export const MobileScannerPage: React.FC = () => {
     const session = params.get('session') || 'DEFAULT';
     setSessionCode(session);
 
-    // Setup WebSocket connection - use same host/port as current page (goes through Vite proxy /ws)
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.host; // includes port if any (e.g. 192.168.1.x:5173)
-    const wsUrl = `${protocol}//${wsHost}/ws`;
+    // wshost param = local laptop IP:port (e.g. "192.168.1.5:3001")
+    // When HP opens scanner from Vercel, wshost ensures WS connects to local laptop, not Vercel
+    const wshostParam = params.get('wshost');
+    let wsUrl: string;
+    if (wshostParam) {
+      // Always use ws:// for local network (laptop WS server doesn't have SSL cert)
+      wsUrl = `ws://${wshostParam}/ws`;
+    } else {
+      // Same origin — works for local dev via Vite proxy
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${protocol}//${window.location.host}/ws`;
+    }
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;

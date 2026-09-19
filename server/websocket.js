@@ -4,7 +4,15 @@ import { WebSocketServer, WebSocket } from 'ws';
 const sessions = new Map();
 
 export const setupWebSocketServer = (httpServer) => {
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  const wss = new WebSocketServer({ 
+    server: httpServer, 
+    path: '/ws',
+    // Allow connections from any origin (including Vercel) so HP opened from Vercel
+    // can still reach the local laptop WebSocket server
+    verifyClient: ({ origin }, cb) => {
+      cb(true); // Accept all origins
+    }
+  });
 
   wss.on('connection', (ws, req) => {
     let currentSession = null;
