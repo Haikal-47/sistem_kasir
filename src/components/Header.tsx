@@ -27,55 +27,60 @@ export const Header: React.FC = () => {
 
   return (
     <>
-      <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between shadow-xs shrink-0 z-20">
+      <header className="h-14 bg-white border-b border-slate-200 px-3 md:px-6 flex items-center justify-between shadow-xs shrink-0 z-20">
         {/* Left: Outlet & Station Name */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-base font-bold text-slate-900 tracking-tight">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <h1 className="text-sm md:text-base font-bold text-slate-900 tracking-tight truncate">
               {cashier.outletName}
             </h1>
-            <span className="text-xs text-slate-600 font-mono">Terminal #01</span>
+            <span className="text-xs text-slate-600 font-mono hidden md:inline">Terminal #01</span>
           </div>
 
-          <div className="h-4 w-px bg-slate-200 mx-1" />
+          <div className="h-4 w-px bg-slate-200 mx-0.5 hidden md:block" />
 
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-medium">
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-medium">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             Online • {cashier.shift}
           </div>
+
+          {/* Mobile: online indicator dot only */}
+          <span className="md:hidden w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" title="Online" />
         </div>
 
         {/* Right: Cashier Name, Pending Alert, Clock, Help */}
-        <div className="flex items-center gap-4">
-          {/* Pending notification trigger */}
+        <div className="flex items-center gap-1.5 md:gap-4">
+          {/* Pending notification trigger – full on desktop, icon-only on mobile */}
           {pendingConfirmations.length > 0 && (
             <button
               onClick={() => setActiveTab('dashboard')}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold hover:bg-amber-100 transition-colors animate-bounce"
+              className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold hover:bg-amber-100 transition-colors animate-bounce"
               title="Klik untuk membuka antrean konfirmasi transfer"
             >
-              <AlertCircle className="w-4 h-4 text-amber-700" />
-              <span>{pendingConfirmations.length} Transfer Perlu Dicek</span>
+              <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+              <span className="hidden sm:inline">{pendingConfirmations.length} Transfer Perlu Dicek</span>
+              <span className="sm:hidden font-bold">{pendingConfirmations.length}</span>
             </button>
           )}
 
-          {/* Cashier Badge */}
-          <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-            <ShieldCheck className="w-4 h-4 text-brand-600" />
-            <span>Kasir: <strong className="text-slate-800">{cashier.name}</strong></span>
+          {/* Cashier Badge – hidden on very small screens */}
+          <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
+            <ShieldCheck className="w-4 h-4 text-brand-600 shrink-0" />
+            <span className="hidden lg:inline">Kasir: </span>
+            <strong className="text-slate-800">{cashier.name.split(' ')[0]}</strong>
           </div>
 
           {/* Realtime Clock */}
-          <div className="flex items-center gap-2 font-mono text-xs text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-            <Clock className="w-3.5 h-3.5 text-slate-500" />
+          <div className="flex items-center gap-1.5 font-mono text-xs text-slate-700 bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200">
+            <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             <span className="font-semibold text-slate-900">{formattedTime}</span>
             <span className="text-slate-500 hidden md:inline font-sans">| {formattedDate}</span>
           </div>
 
-          {/* Keyboard shortcut help */}
+          {/* Keyboard shortcut help – desktop only */}
           <button
             onClick={() => setShowShortcutModal(true)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            className="hidden md:block p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
             title="Panduan Pintasan Keyboard"
           >
             <HelpCircle className="w-5 h-5" />

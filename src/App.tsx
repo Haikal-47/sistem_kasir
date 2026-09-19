@@ -6,14 +6,20 @@ import { TransactionPage } from './pages/TransactionPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { MobileScannerPage } from './pages/MobileScannerPage';
 import { CheckoutModal } from './components/CheckoutModal';
 import { ReceiptModal } from './components/ReceiptModal';
 
 export const App: React.FC = () => {
   const { activeTab, setActiveTab } = usePOS();
 
-  // Global hotkeys for POS cashier speed
+  // Check if browser is opened as dedicated Mobile Handheld Scanner
+  const isScannerMode = window.location.search.includes('mode=scanner');
+
+  // Global hotkeys for POS cashier speed (only in normal POS mode)
   useEffect(() => {
+    if (isScannerMode) return;
+
     const handleGlobalKeys = (e: KeyboardEvent) => {
       // F1 -> Transaksi
       if (e.key === 'F1') {
@@ -39,11 +45,16 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [setActiveTab]);
+  }, [setActiveTab, isScannerMode]);
+
+  // If opened on smartphone in scanner mode, show dedicated mobile scanner view
+  if (isScannerMode) {
+    return <MobileScannerPage />;
+  }
 
   return (
     <div className="flex h-screen w-screen bg-slate-100 overflow-hidden font-sans">
-      {/* 1. Minimalist Sidebar */}
+      {/* 1. Minimalist Sidebar (desktop only; mobile gets bottom nav inside Sidebar component) */}
       <Sidebar />
 
       {/* Main App Container */}
@@ -51,8 +62,8 @@ export const App: React.FC = () => {
         {/* Top Header with live clock and cashier status */}
         <Header />
 
-        {/* Dynamic Page Views */}
-        <main className="flex-1 flex overflow-hidden">
+        {/* Dynamic Page Views — add pb-16 on mobile to clear the fixed bottom nav */}
+        <main className="flex-1 flex overflow-hidden pb-16 md:pb-0">
           {activeTab === 'transaksi' && <TransactionPage />}
           {activeTab === 'dashboard' && <DashboardPage />}
           {activeTab === 'produk' && <ProductsPage />}

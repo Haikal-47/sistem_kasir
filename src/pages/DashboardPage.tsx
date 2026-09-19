@@ -36,15 +36,15 @@ export const DashboardPage: React.FC = () => {
   const lowStockProducts = products.filter(p => p.stock <= 5);
 
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto bg-slate-100 p-6 space-y-6">
+    <div className="flex-1 flex flex-col overflow-y-auto bg-slate-100 p-4 md:p-6 space-y-4 md:space-y-6">
       
       {/* Top Banner with Quick POS Jump */}
-      <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-800">
+      <div className="bg-slate-900 text-white rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-800">
         <div>
           <span className="text-brand-400 text-xs font-mono font-bold uppercase tracking-wider">
             Terminal Kasir Aktif
           </span>
-          <h1 className="text-2xl font-black tracking-tight mt-1">
+          <h1 className="text-xl md:text-2xl font-black tracking-tight mt-1">
             Dashboard Operasional Kasir
           </h1>
           <p className="text-xs text-slate-400 mt-1">

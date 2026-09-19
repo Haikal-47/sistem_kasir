@@ -13,8 +13,11 @@ import {
   Check, 
   Sparkles,
   Layers,
-  ArrowUpDown
+  ArrowUpDown,
+  Printer,
+  Tag
 } from 'lucide-react';
+import { PrintBarcodeModal } from '../components/PrintBarcodeModal';
 
 export const ProductsPage: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct } = usePOS();
@@ -23,6 +26,8 @@ export const ProductsPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('Semua');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
+  const [productForPrint, setProductForPrint] = useState<Product | null>(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -103,24 +108,38 @@ export const ProductsPage: React.FC = () => {
     <div className="flex-1 flex flex-col overflow-hidden bg-slate-100">
       
       {/* Header Bar */}
-      <div className="p-6 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-4 md:p-6 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Package className="w-6 h-6 text-brand-600" />
-            <span>Kelola Katalog & Stok Produk</span>
+          <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Package className="w-5 h-5 md:w-6 md:h-6 text-brand-600" />
+            <span>Kelola Katalog &amp; Stok Produk</span>
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-0.5">
             Total {products.length} produk terdaftar dalam database inventaris kasir.
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="py-2.5 px-4 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700 transition-colors shadow-sm flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Tambah Produk Baru</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setProductForPrint(null);
+              setIsPrintModalOpen(true);
+            }}
+            className="py-2.5 px-4 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors shadow-2xs flex items-center justify-center gap-2"
+            title="Cetak stiker barcode untuk produk"
+          >
+            <Printer className="w-4 h-4 text-slate-500" />
+            <span>Cetak Label Barcode</span>
+          </button>
+
+          <button
+            onClick={handleOpenAdd}
+            className="py-2.5 px-4 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700 transition-colors shadow-sm flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tambah Produk Baru</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -153,9 +172,79 @@ export const ProductsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Clean Table of Products */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      {/* Content Area */}
+      <div className="flex-1 overflow-y-auto p-3 md:p-6">
+
+        {/* ===== MOBILE CARD VIEW (hidden on md+) ===== */}
+        <div className="md:hidden space-y-2">
+          {filteredProducts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+              <Package className="w-10 h-10 mb-2 stroke-1" />
+              <p className="text-sm">Tidak ada produk yang cocok.</p>
+            </div>
+          ) : (
+            filteredProducts.map((product) => {
+              const isOutOfStock = product.stock <= 0;
+              const isLowStock = product.stock > 0 && product.stock <= 5;
+              return (
+                <div key={product.id} className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-sm text-slate-900 leading-tight">{product.name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{product.brand} · {product.category}</p>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Barcode className="w-3 h-3 text-slate-400" />
+                        <span className="font-mono text-[10px] text-slate-500">{product.barcode}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <span className="font-mono font-extrabold text-sm text-slate-900">{formatRupiah(product.price)}</span>
+                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                        isOutOfStock ? 'bg-rose-100 text-rose-700' : isLowStock ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+                      }`}>
+                        Stok: {product.stock} {product.unit}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                    {/* Quick stock adjust */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">Stok:</span>
+                      <div className="inline-flex rounded-lg border border-slate-200 bg-white shadow-2xs">
+                        <button onClick={() => updateProduct(product.id, { stock: Math.max(0, product.stock - 1) })}
+                          className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded-l-lg text-slate-700 font-bold">
+                          -
+                        </button>
+                        <span className="w-8 h-8 flex items-center justify-center text-xs font-bold font-mono text-slate-900">{product.stock}</span>
+                        <button onClick={() => updateProduct(product.id, { stock: product.stock + 1 })}
+                          className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded-r-lg text-slate-700 font-bold">
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => { setProductForPrint(product); setIsPrintModalOpen(true); }}
+                        className="p-2 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors" title="Cetak Barcode">
+                        <Printer className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleOpenEdit(product)}
+                        className="p-2 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors" title="Edit">
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => { if (confirm(`Hapus produk "${product.name}"?`)) deleteProduct(product.id); }}
+                        className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Hapus">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* ===== DESKTOP TABLE VIEW (hidden on mobile) ===== */}
+        <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
@@ -243,6 +332,16 @@ export const ProductsPage: React.FC = () => {
                     <td className="py-3 px-4 text-right">
                       <div className="inline-flex items-center gap-1">
                         <button
+                          onClick={() => {
+                            setProductForPrint(product);
+                            setIsPrintModalOpen(true);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
+                          title="Cetak Label Barcode Produk Ini"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => handleOpenEdit(product)}
                           className="p-1.5 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
                           title="Edit Produk"
@@ -274,6 +373,7 @@ export const ProductsPage: React.FC = () => {
             </div>
           )}
         </div>
+        {/* end desktop table */}
       </div>
 
       {/* Modal Add / Edit Product */}
@@ -420,6 +520,13 @@ export const ProductsPage: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Print Barcode Modal */}
+      <PrintBarcodeModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        products={products}
+        selectedProduct={productForPrint}
+      />
     </div>
   );
 };

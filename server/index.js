@@ -1,8 +1,11 @@
 import express from 'express';
+import http from 'http';
+import os from 'os';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { pool } from './db.js';
 import { initDatabase } from './initDb.js';
+import { setupWebSocketServer } from './websocket.js';
 
 dotenv.config();
 
@@ -20,6 +23,29 @@ app.get('/api/health', async (req, res) => {
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
   }
+});
+
+// GET /api/network-ip - Helper to provide laptop's WiFi IP address for mobile phone scanner
+app.get('/api/network-ip', (req, res) => {
+  const nets = os.networkInterfaces();
+  const addresses = [];
+
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      // Skip internal (i.e. 127.0.0.1) and non-ipv4
+      if (net.family === 'IPv4' && !net.internal) {
+        addresses.push({ interface: name, address: net.address });
+      }
+    }
+  }
+
+  const primaryIp = addresses.find(a => !a.address.startsWith('169.254'))?.address || 'localhost';
+  res.json({
+    primaryIp,
+    addresses,
+    wsPort: PORT,
+    vitePort: 5173
+  });
 });
 
 // GET /api/products
@@ -301,12 +327,15 @@ app.get('/api/cashier', async (req, res) => {
   }
 });
 
-// Start Server & Init DB
+// Start HTTP & WebSocket Server & Init DB
 const startServer = async () => {
   try {
     await initDatabase();
-    app.listen(PORT, () => {
-      console.log(`🚀 Neon PostgreSQL POS API Server running on port ${PORT}`);
+    const server = http.createServer(app);
+    setupWebSocketServer(server);
+
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Neon PostgreSQL POS API & WebSocket Server running on port ${PORT}`);
     });
   } catch (err) {
     console.error('Failed to start server:', err);

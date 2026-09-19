@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { usePOS } from '../context/POSContext';
 import { formatRupiah } from '../utils/formatters';
 import { CameraScannerModal } from '../components/CameraScannerModal';
+import { MobilePairingModal } from '../components/MobilePairingModal';
 import { 
   Barcode, 
   Search, 
@@ -15,7 +16,9 @@ import {
   AlertCircle,
   Tag,
   Check,
-  Database
+  Database,
+  Smartphone,
+  CheckCircle2
 } from 'lucide-react';
 
 export const TransactionPage: React.FC = () => {
@@ -46,8 +49,120 @@ export const TransactionPage: React.FC = () => {
   const [discountInput, setDiscountInput] = useState<string>('');
   const [showDiscountModal, setShowDiscountModal] = useState<boolean>(false);
   const [isCameraScannerOpen, setIsCameraScannerOpen] = useState<boolean>(false);
+  // Mobile-only: toggle between products view and cart drawer
+  const [mobileShowCart, setMobileShowCart] = useState<boolean>(false);
+
+  // Wireless Mobile Scanner State
+  const [sessionCode] = useState<string>(() => {
+    const saved = sessionStorage.getItem('pos_session_code');
+    if (saved) return saved;
+    const newCode = `KASIR-${Math.floor(1000 + Math.random() * 9000)}`;
+    sessionStorage.setItem('pos_session_code', newCode);
+    return newCode;
+  });
+  const [isMobilePairingOpen, setIsMobilePairingOpen] = useState<boolean>(false);
+  const [isScannerConnected, setIsScannerConnected] = useState<boolean>(false);
+  const [activeScannersCount, setActiveScannersCount] = useState<number>(0);
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  // Core barcode lookup logic (used by manual typing, laptop camera, and wireless mobile phone scanner)
+  const processBarcodeLookup = useCallback((code: string): { success: boolean; productName?: string; price?: number } => {
+    const cleanCode = code.trim();
+    if (!cleanCode) return { success: false };
+
+    const found = findProductByBarcode(cleanCode);
+    if (found) {
+      if (found.stock <= 0) {
+        setScanMessage({ text: `Stok produk ${found.name} habis!`, type: 'error' });
+        setTimeout(() => setScanMessage(null), 2500);
+        return { success: false, productName: found.name, price: found.price };
+      } else {
+        addToCart(found, 1);
+        setScanMessage({ text: `[HP Scanner] ${found.name} berhasil ditambahkan ke keranjang!`, type: 'success' });
+        setTimeout(() => setScanMessage(null), 2500);
+        return { success: true, productName: found.name, price: found.price };
+      }
+    } else {
+      setScanMessage({ text: `Barcode "${cleanCode}" tidak ditemukan dalam katalog!`, type: 'error' });
+      setTimeout(() => setScanMessage(null), 2500);
+      return { success: false };
+    }
+  }, [findProductByBarcode, addToCart]);
+
+  // Connect to Real-time WebSocket as POS Terminal
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.hostname;
+    const wsUrl = `${protocol}//${wsHost}:3001/ws`;
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          type: 'JOIN_TERMINAL',
+          session: sessionCode
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'SCANNER_CONNECTED') {
+            setIsScannerConnected(true);
+            setActiveScannersCount(data.activeScanners || 1);
+            setScanMessage({ text: `Kamera HP kasir terhubung (${data.deviceName || 'HP'})`, type: 'success' });
+            setTimeout(() => setScanMessage(null), 3000);
+          } else if (data.type === 'SCANNER_DISCONNECTED') {
+            setActiveScannersCount(data.activeScanners || 0);
+            if (!data.activeScanners) {
+              setIsScannerConnected(false);
+            }
+          } else if (data.type === 'TERMINAL_REGISTERED') {
+            if (data.activeScanners > 0) {
+              setIsScannerConnected(true);
+              setActiveScannersCount(data.activeScanners);
+            }
+          } else if (data.type === 'BARCODE_RECEIVED') {
+            // Real-time scan received from phone!
+            const barcode = data.barcode;
+            const result = processBarcodeLookup(barcode);
+
+            // Send acknowledgment back to mobile phone
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'SCAN_CONFIRMED',
+                session: sessionCode,
+                barcode,
+                productName: result.productName,
+                price: result.price,
+                success: result.success
+              }));
+            }
+          }
+        } catch (e) {
+          console.error('Error in terminal WS message:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        setIsScannerConnected(false);
+      };
+    } catch (e) {
+      console.warn('WebSocket connection not initialized:', e);
+    }
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [sessionCode, processBarcodeLookup]);
 
   // Auto focus barcode input on mount and shortcut keys
   useEffect(() => {
@@ -88,34 +203,14 @@ export const TransactionPage: React.FC = () => {
     return matchesCategory && matchesQuery;
   });
 
-  // Core barcode lookup logic (used by both manual typing and camera scanner)
-  const processBarcodeLookup = (code: string) => {
-    const cleanCode = code.trim();
-    if (!cleanCode) return;
-
-    const found = findProductByBarcode(cleanCode);
-    if (found) {
-      if (found.stock <= 0) {
-        setScanMessage({ text: `Stok produk ${found.name} habis!`, type: 'error' });
-      } else {
-        addToCart(found, 1);
-        setScanMessage({ text: `${found.name} berhasil ditambahkan!`, type: 'success' });
-      }
-    } else {
-      setScanMessage({ text: `Barcode "${cleanCode}" tidak ditemukan dalam katalog!`, type: 'error' });
-    }
-
-    setBarcodeInput('');
-    setTimeout(() => setScanMessage(null), 2500);
-  };
-
   // Handle Form submit (via Enter key)
   const handleBarcodeSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (barcodeInput.trim()) {
       processBarcodeLookup(barcodeInput);
+      setBarcodeInput('');
     } else {
-      // If empty and kasir presses Enter or submits, open camera scanner
+      // If empty, open camera scanner
       setIsCameraScannerOpen(true);
     }
   };
@@ -125,12 +220,13 @@ export const TransactionPage: React.FC = () => {
     e.preventDefault();
     if (barcodeInput.trim()) {
       processBarcodeLookup(barcodeInput);
+      setBarcodeInput('');
     } else {
       setIsCameraScannerOpen(true);
     }
   };
 
-  // Callback when camera reads a barcode
+  // Callback when laptop camera reads a barcode
   const handleCameraScanSuccess = (decodedBarcode: string) => {
     processBarcodeLookup(decodedBarcode);
   };
@@ -147,14 +243,17 @@ export const TransactionPage: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-slate-100">
+    <div className="flex-1 flex overflow-hidden bg-slate-100 relative">
       
       {/* ===================== LEFT PANEL: PRODUCTS & BARCODE SCANNER ===================== */}
-      <div className="flex-1 flex flex-col min-w-0 border-r border-slate-200 bg-slate-50/50">
+      {/* On mobile: hidden when cart is shown; on desktop: always visible */}
+      <div className={`flex-1 flex flex-col min-w-0 border-r border-slate-200 bg-slate-50/50 ${
+        mobileShowCart ? 'hidden md:flex' : 'flex'
+      }`}>
         
         {/* Top Scan & Search Bar */}
         <div className="p-4 bg-white border-b border-slate-200 space-y-3 shadow-xs">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {/* Dedicated Barcode Scanner Input */}
             <form onSubmit={handleBarcodeSubmit} className="flex-1 relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-brand-600">
@@ -165,21 +264,37 @@ export const TransactionPage: React.FC = () => {
                 type="text"
                 value={barcodeInput}
                 onChange={(e) => setBarcodeInput(e.target.value)}
-                placeholder="Scan / Ketik Barcode Produk (Tekan Enter untuk input)..."
+                placeholder="Scan / Ketik Barcode..."
                 className="w-full pl-11 pr-24 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-brand-600 focus:bg-white rounded-xl text-sm font-mono text-slate-900 outline-hidden transition-all placeholder:font-sans placeholder:text-slate-400"
               />
               <button
                 type="button"
                 onClick={handleScanButtonClick}
                 className="absolute right-1.5 top-1.5 bottom-1.5 px-3 bg-brand-600 text-white rounded-lg text-xs font-semibold hover:bg-brand-700 transition-colors flex items-center gap-1 shadow-xs active:scale-[0.98]"
-                title="Klik untuk scan dengan kamera HP / Enter untuk proses barcode"
+                title="Klik untuk scan dengan kamera / Enter untuk proses barcode"
               >
                 Scan (Enter)
               </button>
             </form>
 
+            {/* Wireless Mobile Phone Scanner Pairing Button */}
+            <button
+              type="button"
+              onClick={() => setIsMobilePairingOpen(true)}
+              className={`flex items-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all shadow-2xs shrink-0 ${
+                isScannerConnected
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+              title="Hubungkan kamera smartphone Anda sebagai scanner nirkabel"
+            >
+              <Smartphone className="w-4 h-4 text-brand-600" />
+              <span className="hidden sm:inline">Scanner HP</span>
+              <span className={`w-2 h-2 rounded-full ${isScannerConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+            </button>
+
             {/* Quick Search Input */}
-            <div className="w-64 relative hidden md:block">
+            <div className="w-52 relative hidden md:block">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -191,7 +306,17 @@ export const TransactionPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Barcode feedback message */}
+          {/* Mobile-only product search row */}
+          <div className="md:hidden relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari nama produk atau brand..."
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 focus:border-brand-600 focus:bg-white rounded-xl text-xs text-slate-800 outline-hidden transition-all"
+            />
+          </div>
           {scanMessage && (
             <div className={`text-xs px-3 py-2 rounded-lg flex items-center gap-2 font-medium animate-in fade-in duration-150 ${
               scanMessage.type === 'success'
@@ -207,7 +332,7 @@ export const TransactionPage: React.FC = () => {
             </div>
           )}
 
-          {/* Category Filter Pills & Neon DB status */}
+          {/* Category Filter Pills & Indicators */}
           <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 scrollbar-none">
             <div className="flex items-center gap-1.5">
               {categories.map((cat) => (
@@ -225,13 +350,23 @@ export const TransactionPage: React.FC = () => {
               ))}
             </div>
 
-            {/* Neon DB indicator */}
-            {isDbConnected && (
-              <div className="hidden lg:flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-800 font-semibold shrink-0">
-                <Database className="w-3 h-3 text-emerald-600" />
-                <span>Neon PostgreSQL Active</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* HP Scanner indicator */}
+              {isScannerConnected && (
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-brand-50 border border-brand-200 text-[10px] text-brand-800 font-bold">
+                  <Smartphone className="w-3 h-3 text-brand-600" />
+                  <span>HP Kasir Aktif</span>
+                </div>
+              )}
+
+              {/* Neon DB indicator */}
+              {isDbConnected && (
+                <div className="hidden lg:flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-800 font-semibold">
+                  <Database className="w-3 h-3 text-emerald-600" />
+                  <span>Neon DB Active</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -315,7 +450,15 @@ export const TransactionPage: React.FC = () => {
       </div>
 
       {/* ===================== RIGHT PANEL: REALTIME POS CART ===================== */}
-      <div className="w-96 bg-white flex flex-col shadow-lg border-l border-slate-200 shrink-0 z-10">
+      {/* On mobile: slides up as drawer when mobileShowCart=true; on desktop: fixed right panel */}
+      <div className={`
+        md:w-96 md:flex md:flex-col md:shadow-lg md:border-l md:border-slate-200 md:shrink-0 md:z-10
+        ${
+          mobileShowCart
+            ? 'flex flex-col w-full bg-white z-20 cart-drawer-enter'
+            : 'hidden md:flex'
+        }
+      `}>
         
         {/* Cart Header */}
         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
@@ -373,7 +516,7 @@ export const TransactionPage: React.FC = () => {
               </div>
               <p className="font-semibold text-sm text-slate-700">Keranjang Masih Kosong</p>
               <p className="text-xs text-slate-400 mt-1 max-w-[200px]">
-                Klik 'Scan (Enter)' untuk kamera HP atau ketik barcode produk di sebelah kiri.
+                Scan barcode barang atau gunakan tombol <strong>'Scanner HP'</strong> untuk scan pakai kamera ponsel.
               </p>
             </div>
           ) : (
@@ -477,7 +620,43 @@ export const TransactionPage: React.FC = () => {
             <ArrowRight className="w-4 h-4 ml-1" />
           </button>
         </div>
+
+        {/* Mobile: Back to Products button inside cart */}
+        <button
+          onClick={() => setMobileShowCart(false)}
+          className="md:hidden mx-4 mb-3 py-2.5 rounded-xl border border-slate-300 text-slate-600 text-sm font-semibold flex items-center justify-center gap-2 hover:bg-slate-50"
+        >
+          ← Kembali ke Produk
+        </button>
       </div>
+
+      {/* ===== MOBILE FLOATING CART BUTTON (hidden on desktop) ===== */}
+      {!mobileShowCart && (
+        <button
+          onClick={() => setMobileShowCart(true)}
+          className={`md:hidden fixed bottom-20 right-4 z-30 flex items-center gap-2.5 px-4 py-3 rounded-2xl font-bold text-sm shadow-xl transition-all active:scale-95 ${
+            cart.length > 0
+              ? 'bg-brand-600 text-white shadow-brand-600/40'
+              : 'bg-slate-700 text-slate-300'
+          }`}
+          style={{ boxShadow: cart.length > 0 ? '0 8px 24px rgba(5,150,105,0.35)' : undefined }}
+        >
+          <ShoppingBag className="w-5 h-5" />
+          <span>
+            {cart.length > 0 ? `${cartItemCount} item` : 'Keranjang'}
+          </span>
+          {cart.length > 0 && (
+            <span className="font-mono text-brand-100 text-xs">
+              {formatRupiah(cartTotal)}
+            </span>
+          )}
+          {cart.length > 0 && (
+            <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-slate-900 text-[10px] font-black shadow">
+              {cartItemCount}
+            </span>
+          )}
+        </button>
+      )}
 
       {/* Discount Modal */}
       {showDiscountModal && (
@@ -515,11 +694,20 @@ export const TransactionPage: React.FC = () => {
         </div>
       )}
 
-      {/* Camera Barcode Scanner Modal (Triggered by 'Scan (Enter)' button) */}
+      {/* Laptop Camera Barcode Scanner Modal (Triggered by 'Scan (Enter)' button) */}
       <CameraScannerModal
         isOpen={isCameraScannerOpen}
         onClose={() => setIsCameraScannerOpen(false)}
         onScanSuccess={handleCameraScanSuccess}
+      />
+
+      {/* Wireless Mobile Phone Scanner Pairing Modal */}
+      <MobilePairingModal
+        isOpen={isMobilePairingOpen}
+        onClose={() => setIsMobilePairingOpen(false)}
+        sessionCode={sessionCode}
+        isScannerConnected={isScannerConnected}
+        activeScannersCount={activeScannersCount}
       />
     </div>
   );

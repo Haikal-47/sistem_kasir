@@ -43,13 +43,13 @@ export const HistoryPage: React.FC = () => {
     <div className="flex-1 flex flex-col overflow-hidden bg-slate-100">
       
       {/* Header Bar */}
-      <div className="p-6 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-4 md:p-6 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Receipt className="w-6 h-6 text-brand-600" />
+          <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Receipt className="w-5 h-5 md:w-6 md:h-6 text-brand-600" />
             <span>Riwayat Transaksi Kasir</span>
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-0.5">
             Arsip seluruh transaksi penjualan, nota pembayaran kasir, dan status pelunasan.
           </p>
         </div>
@@ -109,13 +109,93 @@ export const HistoryPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Transactions Table */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      {/* Content Area */}
+      <div className="flex-1 overflow-y-auto p-3 md:p-6">
+
+        {/* ===== MOBILE CARD VIEW ===== */}
+        <div className="md:hidden space-y-3">
+          {filteredTransactions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+              <Receipt className="w-10 h-10 mb-2 stroke-1" />
+              <p className="text-sm">Tidak ada transaksi yang sesuai filter.</p>
+            </div>
+          ) : (
+            filteredTransactions.map((tx) => {
+              const totalItemCount = tx.items.reduce((sum, it) => sum + it.quantity, 0);
+              return (
+                <div key={tx.id} className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="min-w-0">
+                      <div className="font-bold font-mono text-sm text-slate-900">{tx.invoiceNumber}</div>
+                      <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                        <Calendar className="w-3 h-3" />
+                        <span>{formatDateTime(tx.date)}</span>
+                        <span className="text-slate-300">·</span>
+                        <span>{tx.cashierName}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <span className="font-mono font-extrabold text-sm text-slate-900">{formatRupiah(tx.total)}</span>
+                      {tx.paymentMethod === 'TUNAI' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                          <Banknote className="w-3 h-3" /> Tunai
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 text-[10px] font-bold border border-sky-200">
+                          <CreditCard className="w-3 h-3" /> Transfer
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-600 truncate mb-2">
+                    {tx.items.map(it => `${it.name} (${it.quantity})`).join(', ')}
+                    <span className="text-slate-400 ml-1">· {totalItemCount} barang</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    {tx.status === 'LUNAS' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">
+                        <CheckCircle2 className="w-3 h-3" /> Lunas
+                      </span>
+                    )}
+                    {tx.status === 'MENUNGGU_KONFIRMASI' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] font-bold animate-pulse">
+                        <Clock className="w-3 h-3" /> Perlu Konfirmasi
+                      </span>
+                    )}
+                    {tx.status === 'BATAL' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold">
+                        <XCircle className="w-3 h-3" /> Batal
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1">
+                      {tx.status === 'MENUNGGU_KONFIRMASI' && (
+                        <button onClick={() => confirmTransferPayment(tx.id)}
+                          className="py-1.5 px-3 rounded-lg bg-brand-600 text-white font-bold text-xs hover:bg-brand-700 transition-colors">
+                          Konfirmasi
+                        </button>
+                      )}
+                      <button onClick={() => setSelectedTxDetail(tx)}
+                        className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg" title="Detail">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => setSelectedReceipt(tx)}
+                        className="p-2 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg" title="Cetak Struk">
+                        <Printer className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* ===== DESKTOP TABLE VIEW ===== */}
+        <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="py-3 px-4">No. Invoice & Waktu</th>
+                <th className="py-3 px-4">No. Invoice &amp; Waktu</th>
                 <th className="py-3 px-4">Kasir</th>
                 <th className="py-3 px-4">Detail Item</th>
                 <th className="py-3 px-4">Metode Bayar</th>
