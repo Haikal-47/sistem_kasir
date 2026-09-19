@@ -1,0 +1,316 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { pool } from './db.js';
+import { initDatabase } from './initDb.js';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+
+// Health Check
+app.get('/api/health', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW() as current_time');
+    res.json({ status: 'ok', database: 'connected', time: result.rows[0].current_time });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+// GET /api/products
+app.get('/api/products', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
+    const products = result.rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      brand: r.brand,
+      category: r.category,
+      price: parseFloat(r.price),
+      costPrice: r.cost_price ? parseFloat(r.cost_price) : 0,
+      stock: parseInt(r.stock, 10),
+      barcode: r.barcode,
+      unit: r.unit || 'Pcs',
+    }));
+    res.json(products);
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/products
+app.post('/api/products', async (req, res) => {
+  try {
+    const { name, brand, category, price, costPrice, stock, barcode, unit } = req.body;
+    const id = `PRD-${Date.now().toString().slice(-4)}`;
+    const result = await pool.query(
+      `INSERT INTO products (id, name, brand, category, price, cost_price, stock, barcode, unit)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [id, name, brand, category, price, costPrice || 0, stock || 0, barcode, unit || 'Pcs']
+    );
+    const r = result.rows[0];
+    res.status(201).json({
+      id: r.id,
+      name: r.name,
+      brand: r.brand,
+      category: r.category,
+      price: parseFloat(r.price),
+      costPrice: r.cost_price ? parseFloat(r.cost_price) : 0,
+      stock: parseInt(r.stock, 10),
+      barcode: r.barcode,
+      unit: r.unit,
+    });
+  } catch (error) {
+    console.error('Error creating product:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/products/:id
+app.put('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, brand, category, price, costPrice, stock, barcode, unit } = req.body;
+    const result = await pool.query(
+      `UPDATE products
+       SET name = COALESCE($1, name),
+           brand = COALESCE($2, brand),
+           category = COALESCE($3, category),
+           price = COALESCE($4, price),
+           cost_price = COALESCE($5, cost_price),
+           stock = COALESCE($6, stock),
+           barcode = COALESCE($7, barcode),
+           unit = COALESCE($8, unit),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $9
+       RETURNING *`,
+      [name, brand, category, price, costPrice, stock, barcode, unit, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const r = result.rows[0];
+    res.json({
+      id: r.id,
+      name: r.name,
+      brand: r.brand,
+      category: r.category,
+      price: parseFloat(r.price),
+      costPrice: r.cost_price ? parseFloat(r.cost_price) : 0,
+      stock: parseInt(r.stock, 10),
+      barcode: r.barcode,
+      unit: r.unit,
+    });
+  } catch (error) {
+    console.error('Error updating product:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/products/:id
+app.delete('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM products WHERE id = $1', [id]);
+    res.json({ success: true, id });
+  } catch (error) {
+    console.error('Error deleting product:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/transactions
+app.get('/api/transactions', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM transactions ORDER BY date DESC');
+    const transactions = result.rows.map(r => ({
+      id: r.id,
+      invoiceNumber: r.invoice_number,
+      date: r.date.toISOString ? r.date.toISOString() : r.date,
+      cashierName: r.cashier_name,
+      items: typeof r.items === 'string' ? JSON.parse(r.items) : r.items,
+      subtotal: parseFloat(r.subtotal),
+      tax: parseFloat(r.tax || 0),
+      discount: parseFloat(r.discount || 0),
+      total: parseFloat(r.total),
+      paymentMethod: r.payment_method,
+      status: r.status,
+      cashGiven: r.cash_given ? parseFloat(r.cash_given) : undefined,
+      changeAmount: r.change_amount ? parseFloat(r.change_amount) : undefined,
+      transferBank: r.transfer_bank || undefined,
+      transferProofUrl: r.transfer_proof_url || undefined,
+      transferProofVerified: r.transfer_proof_verified,
+      transferConfirmedAt: r.transfer_confirmed_at ? (r.transfer_confirmed_at.toISOString ? r.transfer_confirmed_at.toISOString() : r.transfer_confirmed_at) : undefined,
+      transferConfirmedBy: r.transfer_confirmed_by || undefined,
+      customerNote: r.customer_note || undefined,
+    }));
+    res.json(transactions);
+  } catch (error) {
+    console.error('Error fetching transactions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/transactions
+app.post('/api/transactions', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const {
+      id, invoiceNumber, date, cashierName, items, subtotal, tax, discount, total,
+      paymentMethod, status, cashGiven, changeAmount, transferBank, transferProofUrl,
+      transferProofVerified, transferConfirmedAt, transferConfirmedBy, customerNote
+    } = req.body;
+
+    // Deduct stock in DB
+    for (const item of items) {
+      await client.query(
+        `UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [item.quantity, item.productId]
+      );
+    }
+
+    const result = await client.query(
+      `INSERT INTO transactions (
+        id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total,
+        payment_method, status, cash_given, change_amount, transfer_bank, transfer_proof_url,
+        transfer_proof_verified, transfer_confirmed_at, transfer_confirmed_by, customer_note
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      RETURNING *`,
+      [
+        id, invoiceNumber, date, cashierName, JSON.stringify(items), subtotal, tax || 0, discount || 0, total,
+        paymentMethod, status, cashGiven || null, changeAmount || null, transferBank || null, transferProofUrl || null,
+        transferProofVerified || false, transferConfirmedAt || null, transferConfirmedBy || null, customerNote || null
+      ]
+    );
+
+    await client.query('COMMIT');
+    const r = result.rows[0];
+    res.status(201).json({
+      ...req.body,
+      id: r.id,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error creating transaction:', error);
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /api/transactions/:id/confirm
+app.patch('/api/transactions/:id/confirm', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { confirmedBy } = req.body;
+    const now = new Date().toISOString();
+
+    const result = await pool.query(
+      `UPDATE transactions
+       SET status = 'LUNAS',
+           transfer_proof_verified = TRUE,
+           transfer_confirmed_at = $1,
+           transfer_confirmed_by = $2
+       WHERE id = $3
+       RETURNING *`,
+      [now, confirmedBy || 'Kasir', id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    res.json({ success: true, transaction: result.rows[0] });
+  } catch (error) {
+    console.error('Error confirming transaction:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/transactions/:id/cancel
+app.patch('/api/transactions/:id/cancel', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { id } = req.params;
+
+    const txRes = await client.query(`SELECT * FROM transactions WHERE id = $1`, [id]);
+    if (txRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    const tx = txRes.rows[0];
+    const items = typeof tx.items === 'string' ? JSON.parse(tx.items) : tx.items;
+
+    // Restore stock
+    for (const item of items) {
+      await client.query(
+        `UPDATE products SET stock = stock + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [item.quantity, item.productId]
+      );
+    }
+
+    await client.query(`UPDATE transactions SET status = 'BATAL' WHERE id = $1`, [id]);
+    await client.query('COMMIT');
+    res.json({ success: true, id, status: 'BATAL' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error cancelling transaction:', error);
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/cashier
+app.get('/api/cashier', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM cashier_profile LIMIT 1');
+    if (result.rows.length === 0) {
+      return res.json({
+        id: 'CSH-001',
+        name: 'Budi Pratama',
+        shift: 'Shift 1 (07:00 - 15:00)',
+        outletName: 'MINIMARKET KASIR PRO',
+        outletAddress: 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
+        outletPhone: '021-5550192',
+      });
+    }
+    const r = result.rows[0];
+    res.json({
+      id: r.id,
+      name: r.name,
+      shift: r.shift,
+      outletName: r.outlet_name,
+      outletAddress: r.outlet_address,
+      outletPhone: r.outlet_phone,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start Server & Init DB
+const startServer = async () => {
+  try {
+    await initDatabase();
+    app.listen(PORT, () => {
+      console.log(`🚀 Neon PostgreSQL POS API Server running on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error('Failed to start server:', err);
+  }
+};
+
+startServer();
