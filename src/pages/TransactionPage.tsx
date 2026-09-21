@@ -18,7 +18,6 @@ import {
   Check,
   Database,
   Smartphone,
-  CheckCircle2,
   CreditCard
 } from 'lucide-react';
 
@@ -54,7 +53,7 @@ export const TransactionPage: React.FC = () => {
   // Mobile-only: toggle between products view and cart drawer
   const [mobileShowCart, setMobileShowCart] = useState<boolean>(false);
 
-  // Wireless Mobile Scanner State
+  // Wireless Mobile Scanner State — uses DB polling (works on Vercel, no WebSocket needed)
   const [sessionCode] = useState<string>(() => {
     const saved = sessionStorage.getItem('pos_session_code');
     if (saved) return saved;
@@ -63,11 +62,12 @@ export const TransactionPage: React.FC = () => {
     return newCode;
   });
   const [isMobilePairingOpen, setIsMobilePairingOpen] = useState<boolean>(false);
+  const [isScannerPolling, setIsScannerPolling] = useState<boolean>(false);
   const [isScannerConnected, setIsScannerConnected] = useState<boolean>(false);
   const [activeScannersCount, setActiveScannersCount] = useState<number>(0);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
 
   // Core barcode lookup logic (used by manual typing, laptop camera, and wireless mobile phone scanner)
   const processBarcodeLookup = useCallback((code: string): { success: boolean; productName?: string; price?: number } => {
@@ -93,76 +93,46 @@ export const TransactionPage: React.FC = () => {
     }
   }, [findProductByBarcode, addToCart]);
 
-  // Connect to Real-time WebSocket as POS Terminal
+  // DB Polling: laptop pulls pending scans from Neon DB every 1.5 seconds (works on Vercel)
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.hostname;
-    const wsUrl = `${protocol}//${wsHost}:3001/ws`;
+    const pollPendingScans = async () => {
+      try {
+        const res = await fetch(`/api/scan/pending?session=${sessionCode}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const scans: { id: number; barcode: string }[] = Array.isArray(data)
+          ? data
+          : (data.scans || []);
 
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
+        setIsScannerConnected(Boolean(data.isScannerConnected));
+        setActiveScannersCount(data.isScannerConnected ? 1 : 0);
 
-      ws.onopen = () => {
-        ws.send(JSON.stringify({
-          type: 'JOIN_TERMINAL',
-          session: sessionCode
-        }));
-      };
+        if (scans.length === 0) return;
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          if (data.type === 'SCANNER_CONNECTED') {
-            setIsScannerConnected(true);
-            setActiveScannersCount(data.activeScanners || 1);
-            setScanMessage({ text: `Kamera HP kasir terhubung (${data.deviceName || 'HP'})`, type: 'success' });
-            setTimeout(() => setScanMessage(null), 3000);
-          } else if (data.type === 'SCANNER_DISCONNECTED') {
-            setActiveScannersCount(data.activeScanners || 0);
-            if (!data.activeScanners) {
-              setIsScannerConnected(false);
-            }
-          } else if (data.type === 'TERMINAL_REGISTERED') {
-            if (data.activeScanners > 0) {
-              setIsScannerConnected(true);
-              setActiveScannersCount(data.activeScanners);
-            }
-          } else if (data.type === 'BARCODE_RECEIVED') {
-            // Real-time scan received from phone!
-            const barcode = data.barcode;
-            const result = processBarcodeLookup(barcode);
-
-            // Send acknowledgment back to mobile phone
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'SCAN_CONFIRMED',
-                session: sessionCode,
-                barcode,
-                productName: result.productName,
-                price: result.price,
-                success: result.success
-              }));
-            }
-          }
-        } catch (e) {
-          console.error('Error in terminal WS message:', e);
+        setIsScannerPolling(true);
+        for (const scan of scans) {
+          const result = processBarcodeLookup(scan.barcode);
+          // Mark as processed in DB with lookup result
+          try {
+            await fetch(`/api/scan/${scan.id}/processed`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                success: result.success,
+                productName: result.productName || null,
+                productPrice: result.price || null,
+              }),
+            });
+          } catch (e) { /* non-critical */ }
         }
-      };
+        setTimeout(() => setIsScannerPolling(false), 2000);
+      } catch (e) { /* network error, ignore */ }
+    };
 
-      ws.onclose = () => {
-        setIsScannerConnected(false);
-      };
-    } catch (e) {
-      console.warn('WebSocket connection not initialized:', e);
-    }
-
+    pollPendingScans();
+    pollingRef.current = setInterval(pollPendingScans, 1500);
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [sessionCode, processBarcodeLookup]);
 
@@ -284,7 +254,7 @@ export const TransactionPage: React.FC = () => {
               type="button"
               onClick={() => setIsMobilePairingOpen(true)}
               className={`flex items-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all shadow-2xs shrink-0 ${
-                isScannerConnected
+                isScannerPolling
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
                   : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
@@ -292,7 +262,7 @@ export const TransactionPage: React.FC = () => {
             >
               <Smartphone className="w-4 h-4 text-brand-600" />
               <span className="hidden sm:inline">Scanner HP</span>
-              <span className={`w-2 h-2 rounded-full ${isScannerConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+              <span className={`w-2 h-2 rounded-full ${isScannerPolling ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
             </button>
 
             {/* Quick Search Input */}
@@ -354,10 +324,10 @@ export const TransactionPage: React.FC = () => {
 
             <div className="flex items-center gap-2 shrink-0">
               {/* HP Scanner indicator */}
-              {isScannerConnected && (
+              {isScannerPolling && (
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-brand-50 border border-brand-200 text-[10px] text-brand-800 font-bold">
                   <Smartphone className="w-3 h-3 text-brand-600" />
-                  <span>HP Kasir Aktif</span>
+                  <span>HP Scan Aktif</span>
                 </div>
               )}
 

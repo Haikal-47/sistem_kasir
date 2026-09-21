@@ -36,12 +36,16 @@ export const MobilePairingModal: React.FC<MobilePairingModalProps> = ({
 
   if (!isOpen) return null;
 
-  const port = window.location.port ? `:${window.location.port}` : '';
-  const host = networkIp || window.location.hostname;
-  const localIpWithPort = `${host}:3001`; // Backend WS server always on 3001
-  // Include wshost so HP can connect WS to local laptop even when UI is from Vercel
-  const scannerUrl = `${window.location.protocol}//${host}${port}/?mode=scanner&session=${sessionCode}&wshost=${encodeURIComponent(localIpWithPort)}`;
-  const localTestUrl = `${window.location.origin}/?mode=scanner&session=${sessionCode}&wshost=${encodeURIComponent('localhost:3001')}`;
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  let scannerUrl = '';
+  if (isLocalhost) {
+    const port = window.location.port ? `:${window.location.port}` : '';
+    const host = networkIp || window.location.hostname;
+    scannerUrl = `${window.location.protocol}//${host}${port}/?mode=scanner&session=${sessionCode}`;
+  } else {
+    scannerUrl = `${window.location.origin}/?mode=scanner&session=${sessionCode}`;
+  }
+  const localTestUrl = `${window.location.origin}/?mode=scanner&session=${sessionCode}`;
 
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(scannerUrl)}`;
 

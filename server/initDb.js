@@ -88,6 +88,28 @@ export const initDatabase = async () => {
       ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS description TEXT;
     `);
 
+    // 5. Scanner Sessions & Pending Scans (Wireless Scanner HP via DB Polling)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS scanner_sessions (
+        session_code VARCHAR(50) PRIMARY KEY,
+        last_heartbeat TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        device_name VARCHAR(100)
+      );
+
+      CREATE TABLE IF NOT EXISTS pending_scans (
+        id SERIAL PRIMARY KEY,
+        session_code VARCHAR(50) NOT NULL,
+        barcode VARCHAR(100) NOT NULL,
+        scanned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        processed BOOLEAN DEFAULT FALSE,
+        product_name VARCHAR(255),
+        product_price NUMERIC(15, 2),
+        success BOOLEAN
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_pending_scans_session ON pending_scans (session_code, processed);
+    `);
+
     // Seed payment methods if empty
     const pmCheck = await client.query(`SELECT COUNT(*) FROM payment_methods`);
     if (parseInt(pmCheck.rows[0].count, 10) === 0) {
