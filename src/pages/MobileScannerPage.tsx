@@ -45,7 +45,19 @@ const playBeep = (isSuccess: boolean = true) => {
 };
 
 export const MobileScannerPage: React.FC = () => {
-  const [sessionCode, setSessionCode] = useState<string>('DEFAULT');
+  const [sessionCode, setSessionCode] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('session') || 'DEFAULT';
+    }
+    return 'DEFAULT';
+  });
+  const sessionCodeRef = useRef<string>(sessionCode);
+
+  useEffect(() => {
+    sessionCodeRef.current = sessionCode;
+  }, [sessionCode]);
+
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const [manualInput, setManualInput] = useState<string>('');
   const [scannerError, setScannerError] = useState<string | null>(null);
@@ -61,11 +73,12 @@ export const MobileScannerPage: React.FC = () => {
   const isProcessingRef = useRef<boolean>(false);
   const ackPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Read session code from URL query params
+  // Read session code from URL query params (fallback sync)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const session = params.get('session') || 'DEFAULT';
     setSessionCode(session);
+    sessionCodeRef.current = session;
 
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -235,11 +248,13 @@ export const MobileScannerPage: React.FC = () => {
       status: 'sending',
     });
 
+    const activeSession = sessionCodeRef.current || (new URLSearchParams(window.location.search).get('session')) || 'DEFAULT';
+
     try {
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session: sessionCode, barcode: code }),
+        body: JSON.stringify({ session: activeSession, barcode: code }),
       });
 
       if (!res.ok) throw new Error('Failed to send scan to server');
@@ -254,8 +269,17 @@ export const MobileScannerPage: React.FC = () => {
 
       ackPollRef.current = setInterval(async () => {
         attempts++;
-        if (attempts > 12) {
+        if (attempts > 15) {
           clearInterval(ackPollRef.current!);
+          setLastScan((prev) =>
+            prev && prev.status === 'waiting'
+              ? {
+                  ...prev,
+                  status: 'error',
+                  productName: 'Waktu tunggu habis. Pastikan tab Transaksi di laptop sedang aktif.',
+                }
+              : prev
+          );
           return;
         }
 
