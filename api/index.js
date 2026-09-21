@@ -518,7 +518,7 @@ router.get('/scan/pending', async (req, res) => {
     if (!session) return res.status(400).json({ error: 'Session code is required' });
 
     const sessionRes = await pool.query(
-      `SELECT (last_heartbeat > CURRENT_TIMESTAMP - INTERVAL '15 seconds') AS is_active
+      `SELECT (last_heartbeat > CURRENT_TIMESTAMP - INTERVAL '45 seconds') AS is_active
        FROM scanner_sessions WHERE session_code = $1`,
       [session]
     );
