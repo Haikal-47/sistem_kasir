@@ -158,15 +158,31 @@ export const MobileScannerPage: React.FC = () => {
       const html5QrCode = new Html5Qrcode(readerElementId, {
         formatsToSupport,
         verbose: false,
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true,
+        },
       });
       scannerRef.current = html5QrCode;
 
+      const cameraSource = cameraId
+        ? { deviceId: { exact: cameraId } }
+        : {
+            facingMode: 'environment',
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 },
+          };
+
       await html5QrCode.start(
-        cameraId ? { deviceId: { exact: cameraId } } : { facingMode: 'environment' },
+        cameraSource,
         {
-          fps: 20,
-          qrbox: { width: 280, height: 160 },
+          fps: 25,
+          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+            const width = Math.min(Math.floor(viewfinderWidth * 0.92), 580);
+            const height = Math.min(Math.floor(viewfinderHeight * 0.55), 280);
+            return { width, height };
+          },
           aspectRatio: 1.0,
+          disableFlip: true,
         },
         (decodedText) => {
           if (isProcessingRef.current) return;
@@ -426,15 +442,15 @@ export const MobileScannerPage: React.FC = () => {
 
         {/* Laser target frame */}
         <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-          <div className="relative w-72 h-44 border-2 border-brand-500 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-            <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-brand-400 rounded-tl" />
-            <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-brand-400 rounded-tr" />
-            <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-brand-400 rounded-bl" />
-            <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-brand-400 rounded-br" />
+          <div className="relative w-[85vw] max-w-[340px] h-48 border-2 border-brand-500 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+            <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-brand-400 rounded-tl" />
+            <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-brand-400 rounded-tr" />
+            <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-brand-400 rounded-bl" />
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-brand-400 rounded-br" />
             <div className="absolute inset-x-2 h-0.5 bg-red-500 shadow-[0_0_10px_#ef4444] animate-bounce top-1/2 -translate-y-1/2" />
           </div>
-          <span className="text-[11px] font-mono text-white/90 mt-4 bg-black/70 px-3.5 py-1.5 rounded-full border border-white/10 backdrop-blur-xs">
-            Arahkan kamera ke barcode produk
+          <span className="text-[11px] font-medium text-white/95 mt-4 bg-black/80 px-4 py-2 rounded-full border border-white/20 backdrop-blur-md shadow-lg text-center max-w-[85vw]">
+            Dekatkan ke 1 barcode saja sampai garis merah memotong penuh
           </span>
         </div>
 
