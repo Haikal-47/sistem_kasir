@@ -115,7 +115,7 @@ export const TransactionPage: React.FC = () => {
           // Mark as processed in DB with lookup result
           try {
             await fetch(`/api/scan/${scan.id}/processed`, {
-              method: 'PATCH',
+              method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 success: result.success,

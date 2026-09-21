@@ -542,8 +542,8 @@ router.get('/scan/pending', async (req, res) => {
   }
 });
 
-// Laptop tandai barcode sudah selesai diproses
-router.patch('/scan/:id/processed', async (req, res) => {
+// Laptop tandai barcode sudah selesai diproses (POST + PATCH for Vercel compatibility)
+const markScanProcessedHandler = async (req, res) => {
   try {
     const { id } = req.params;
     const { success, productName, productPrice } = req.body;
@@ -560,7 +560,9 @@ router.patch('/scan/:id/processed', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+};
+router.post('/scan/:id/processed', markScanProcessedHandler);
+router.patch('/scan/:id/processed', markScanProcessedHandler);
 
 // HP polling acknowledgement
 router.get('/scan/:id/ack', async (req, res) => {
