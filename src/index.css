@@ -67,6 +67,22 @@
     padding: 10px;
     background: white;
   }
+  /* Force SVG barcode bars to print black regardless of
+     browser "Print Background Graphics" setting.
+     SVG fill/stroke always prints; this is just a safety net. */
+  .barcode-label-card svg rect {
+    fill: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .barcode-label-card svg text {
+    fill: #000 !important;
+  }
+  /* Prevent label cards from splitting across pages */
+  .barcode-label-card {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
 }
 
 /* Pulse highlight animation for barcode scan success */

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Product } from '../types';
 import { formatRupiah } from '../utils/formatters';
-import { generateBarcodeBars } from '../utils/barcodeGenerator';
+import { generateEAN13SVG } from '../utils/barcodeGenerator';
 import { Printer, X, Tag, Sliders, CheckSquare, Square } from 'lucide-react';
 
 interface PrintBarcodeModalProps {
@@ -50,49 +50,46 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
 
   // Render individual retail barcode label
   const renderBarcodeLabel = (product: Product, index: number) => {
-    const bars = generateBarcodeBars(product.barcode);
+    // Generate proper EAN-13 SVG barcode (print-safe, SVG fill always prints)
+    const barcodeSvg = generateEAN13SVG(product.barcode, 176, 56, false);
 
     return (
       <div
         key={`${product.id}-${index}`}
-        className="barcode-label-card bg-white border border-slate-300 rounded-lg p-3 flex flex-col justify-between items-center text-center shadow-2xs select-none w-56 h-36 box-border print:w-48 print:h-32 print:border-black print:rounded-none print:shadow-none"
+        className="barcode-label-card bg-white border border-slate-300 rounded-lg p-2.5 flex flex-col justify-between items-center text-center shadow-2xs select-none box-border print:border-black print:rounded-none print:shadow-none"
+        style={{ width: '220px', minHeight: '160px' }}
       >
         {/* Store & Category */}
         <div className="w-full flex items-center justify-between border-b border-dashed border-slate-300 pb-1 text-[9px] font-bold text-slate-500 uppercase">
-          <span className="truncate max-w-[120px]">KASIR PRO</span>
-          <span>{product.category}</span>
+          <span>KASIR PRO</span>
+          <span className="truncate max-w-[100px] text-right">{product.category}</span>
         </div>
 
-        {/* Product Name */}
-        <div className="my-1 w-full px-1">
-          <h4 className="font-bold text-xs text-slate-900 leading-tight truncate">
+        {/* Product Name — allow 2 lines so it doesn't truncate */}
+        <div className="my-1.5 w-full px-1">
+          <h4 className="font-bold text-[11px] text-slate-900 leading-snug line-clamp-2 text-center">
             {product.name}
           </h4>
-          <span className="text-[10px] text-slate-500 font-medium">
+          <span className="text-[9px] text-slate-500 font-medium">
             {product.brand} • {product.unit}
           </span>
         </div>
 
-        {/* Barcode SVG Visual */}
-        <div className="w-full flex flex-col items-center my-0.5">
-          <div className="flex items-center justify-center gap-0.5 h-9 w-full max-w-[180px] overflow-hidden px-1">
-            {bars.map((w, bIdx) => (
-              <div
-                key={bIdx}
-                className="bg-black h-full shrink-0"
-                style={{ width: `${w * 1.5}px` }}
-              />
-            ))}
-          </div>
-          <span className="text-[10px] font-mono font-bold tracking-widest text-slate-900 mt-0.5">
-            {product.barcode}
-          </span>
-        </div>
+        {/* EAN-13 SVG Barcode — SVG fill prints correctly without "print backgrounds" */}
+        <div
+          className="w-full flex justify-center my-1"
+          dangerouslySetInnerHTML={{ __html: barcodeSvg }}
+        />
+
+        {/* Barcode digits */}
+        <span className="text-[9px] font-mono font-bold tracking-widest text-slate-900 -mt-1">
+          {product.barcode}
+        </span>
 
         {/* Price Tag */}
-        <div className="w-full pt-1 border-t border-dashed border-slate-300 flex items-baseline justify-between text-slate-900">
+        <div className="w-full pt-1.5 mt-1 border-t border-dashed border-slate-300 flex items-baseline justify-between text-slate-900">
           <span className="text-[9px] uppercase font-bold text-slate-500">Harga:</span>
-          <span className="font-extrabold text-xs font-mono tracking-tight text-slate-950">
+          <span className="font-extrabold text-[13px] font-mono tracking-tight text-slate-950">
             {formatRupiah(product.price)}
           </span>
         </div>
