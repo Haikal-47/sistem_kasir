@@ -631,7 +631,7 @@ export const PaymentMethodsPage: React.FC = () => {
                     type="text"
                     value={formAccountHolder}
                     onChange={(e) => setFormAccountHolder(e.target.value)}
-                    placeholder="Contoh: Kasir Kita Pro / PT Toko Retail"
+                    placeholder="Contoh: ARFA FASHION / PT Busana Mandiri"
                     className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:border-brand-600 focus:ring-2 focus:ring-brand-500/20 outline-hidden transition-all shadow-2xs text-slate-900 font-medium"
                   />
                 </div>

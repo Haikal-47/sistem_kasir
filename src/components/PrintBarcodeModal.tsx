@@ -61,7 +61,7 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
       >
         {/* Store & Category */}
         <div className="w-full flex items-center justify-between border-b border-dashed border-slate-300 pb-1 text-[9px] font-bold text-slate-500 uppercase">
-          <span>KASIR PRO</span>
+          <span>ARFA FASHION</span>
           <span className="truncate max-w-[100px] text-right">{product.category}</span>
         </div>
 

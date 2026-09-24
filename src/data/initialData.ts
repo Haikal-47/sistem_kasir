@@ -272,7 +272,7 @@ export const INITIAL_PAYMENT_METHODS: PaymentMethodConfig[] = [
     isDefault: false,
     bankName: 'Bank Central Asia (BCA)',
     accountNumber: '8820 4912 3901',
-    accountHolder: 'Kasir Kita Pro',
+    accountHolder: 'ARFA FASHION',
     description: 'Verifikasi mutasi m-banking BCA otomatis / manual',
   },
   {
@@ -285,7 +285,7 @@ export const INITIAL_PAYMENT_METHODS: PaymentMethodConfig[] = [
     isDefault: false,
     bankName: 'Bank Negara Indonesia (BNI)',
     accountNumber: '0391 2847 10',
-    accountHolder: 'Kasir Kita Pro',
+    accountHolder: 'ARFA FASHION',
     description: 'Transfer via BNI Mobile Banking / ATM',
   },
   {
@@ -298,7 +298,7 @@ export const INITIAL_PAYMENT_METHODS: PaymentMethodConfig[] = [
     isDefault: false,
     bankName: 'Bank Rakyat Indonesia (BRI)',
     accountNumber: '1029 0100 4819 501',
-    accountHolder: 'Kasir Kita Pro',
+    accountHolder: 'ARFA FASHION',
     description: 'Transfer via aplikasi BRImo',
   },
   {
@@ -311,7 +311,7 @@ export const INITIAL_PAYMENT_METHODS: PaymentMethodConfig[] = [
     isDefault: false,
     bankName: 'Bank Mandiri',
     accountNumber: '1370 0192 4819 2',
-    accountHolder: 'Kasir Kita Pro',
+    accountHolder: 'ARFA FASHION',
     description: 'Transfer via Livin by Mandiri',
   },
   {
@@ -324,7 +324,7 @@ export const INITIAL_PAYMENT_METHODS: PaymentMethodConfig[] = [
     isDefault: false,
     bankName: 'QRIS Multi-Payment',
     accountNumber: 'NMD-881920194',
-    accountHolder: 'Kasir Kita Pro',
+    accountHolder: 'ARFA FASHION',
     description: 'Scan QRIS dari GoPay, OVO, ShopeePay, DANA & m-banking',
   },
 ];

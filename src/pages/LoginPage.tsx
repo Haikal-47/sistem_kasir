@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePOS } from '../context/POSContext';
 import { Store, KeyRound, Eye, EyeOff, LogIn, ShieldCheck, AlertCircle } from 'lucide-react';
+import { ArfaLogo } from '../components/ArfaLogo';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -108,17 +109,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         {/* Header */}
         <div className="px-8 pt-8 pb-6 text-center border-b border-slate-800">
           <div className="flex justify-center mb-3">
-            <img 
-              src="/logo.png" 
-              alt="Kasir Kita" 
-              className="w-20 h-20 object-contain hover:scale-105 transition-transform" 
-            />
+            <ArfaLogo size={80} />
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight">
-            Kasir Kita
+            ARFA FASHION
           </h1>
-          <p className="text-xs text-brand-400 font-semibold tracking-wider uppercase mt-0.5">
-            {cashier.outletName || 'MINIMARKET KASIR PRO'}
+          <p className="text-xs text-pink-400 font-semibold tracking-wider uppercase mt-0.5">
+            {cashier.outletName || 'ARFA FASHION'}
           </p>
           <p className="text-xs text-slate-400 mt-1 font-medium">
             Masuk ke terminal kasir untuk memulai transaksi

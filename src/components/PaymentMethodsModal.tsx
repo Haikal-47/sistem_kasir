@@ -330,7 +330,7 @@ export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen
                     type="text"
                     value={form.accountHolder}
                     onChange={(e) => setForm(f => ({ ...f, accountHolder: e.target.value }))}
-                    placeholder="Contoh: Kasir Kita Pro"
+                    placeholder="Contoh: ARFA FASHION"
                     className="w-full px-2.5 py-1.5 bg-white border border-slate-300 focus:border-brand-500 rounded-lg text-xs outline-none"
                   />
                 </div>

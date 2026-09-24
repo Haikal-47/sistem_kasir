@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <radialGradient id="pinkGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff5f7" />
+      <stop offset="100%" stop-color="#fce7f3" />
+    </radialGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="50" cy="50" r="48" fill="url(#pinkGrad)" stroke="#f472b6" stroke-width="1.5" stroke-opacity="0.6" />
+  
+  <!-- Laurel / dotted wreath ring -->
+  <circle cx="50" cy="50" r="41" fill="none" stroke="#f472b6" stroke-width="1.2" stroke-dasharray="3.5 2.5" opacity="0.85"/>
+  <path d="M48 11C50 15 45 18 43 20" stroke="#f472b6" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M52 11C50 15 55 18 57 20" stroke="#f472b6" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M48 89C50 85 45 82 43 80" stroke="#f472b6" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M52 89C50 85 55 82 57 80" stroke="#f472b6" stroke-width="1.2" stroke-linecap="round"/>
+  
+  <!-- Text: Arfa Fashion -->
+  <text x="50" y="47" text-anchor="middle" font-family="'Playfair Display', Georgia, serif, 'Times New Roman'" font-style="italic" font-weight="700" font-size="13" fill="#db2777" letter-spacing="0.3">Arfa</text>
+  <text x="50" y="62" text-anchor="middle" font-family="'Playfair Display', Georgia, serif, 'Times New Roman'" font-style="italic" font-weight="700" font-size="11" fill="#db2777" letter-spacing="0.3">Fashion</text>
+</svg>

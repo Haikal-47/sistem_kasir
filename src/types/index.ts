@@ -33,7 +33,7 @@ export interface PaymentMethodConfig {
   isDefault: boolean;     // true for the built-in Tunai — cannot be deleted
   bankName?: string;      // e.g. "Bank Central Asia (BCA)"
   accountNumber?: string; // e.g. "8820 4912 3901"
-  accountHolder?: string; // e.g. "Kasir Kita Pro"
+  accountHolder?: string; // e.g. "ARFA FASHION"
   description?: string;   // e.g. "Verifikasi mutasi m-banking"
 }
 
