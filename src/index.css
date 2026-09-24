@@ -43,8 +43,27 @@
     visibility: hidden;
   }
   #printable-receipt, #printable-receipt *,
-  #printable-barcode-sheet, #printable-barcode-sheet * {
+  #printable-barcode-sheet, #printable-barcode-sheet *,
+  #printable-arfa-invoice, #printable-arfa-invoice * {
     visibility: visible;
+  }
+  #printable-arfa-invoice {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 10mm 15mm;
+    background: white;
+    color: black;
+    box-shadow: none !important;
+  }
+  #printable-arfa-invoice *,
+  #printable-arfa-invoice *::before,
+  #printable-arfa-invoice *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
   #printable-receipt {
     position: absolute;

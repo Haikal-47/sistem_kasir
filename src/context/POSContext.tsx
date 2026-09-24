@@ -90,7 +90,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cashier, setCashier] = useState<CashierProfile>(() => {
     const saved = localStorage.getItem('pos_cashier');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.outletName === 'MINIMARKET KASIR PRO') {
+          parsed.outletName = 'ARFA FASHION';
+          localStorage.setItem('pos_cashier', JSON.stringify(parsed));
+        }
+        return parsed;
+      } catch (e) { console.error(e); }
     }
     return INITIAL_CASHIER;
   });

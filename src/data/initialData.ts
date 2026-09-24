@@ -4,7 +4,7 @@ export const INITIAL_CASHIER: CashierProfile = {
   id: 'CSH-001',
   name: 'Budi Pratama',
   shift: 'Shift 1 (07:00 - 15:00)',
-  outletName: 'MINIMARKET KASIR PRO',
+  outletName: 'ARFA FASHION',
   outletAddress: 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
   outletPhone: '021-5550192',
 };

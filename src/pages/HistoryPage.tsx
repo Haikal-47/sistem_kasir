@@ -14,8 +14,10 @@ import {
   Banknote, 
   CreditCard,
   X,
-  Calendar
+  Calendar,
+  FileText
 } from 'lucide-react';
+import { ArfaInvoiceModal } from '../components/ArfaInvoiceModal';
 
 export const HistoryPage: React.FC = () => {
   const { transactions, setSelectedReceipt, confirmTransferPayment, cancelTransaction } = usePOS();
@@ -24,6 +26,7 @@ export const HistoryPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('SEMUA');
   const [methodFilter, setMethodFilter] = useState<string>('SEMUA');
   const [selectedTxDetail, setSelectedTxDetail] = useState<Transaction | null>(null);
+  const [selectedInvoiceTx, setSelectedInvoiceTx] = useState<Transaction | null>(null);
 
   // Filtered transactions
   const filteredTransactions = transactions.filter((tx) => {
@@ -179,8 +182,12 @@ export const HistoryPage: React.FC = () => {
                         <Eye className="w-4 h-4" />
                       </button>
                       <button onClick={() => setSelectedReceipt(tx)}
-                        className="p-2 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg" title="Cetak Struk">
+                        className="p-2 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg" title="Cetak Struk Thermal">
                         <Printer className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => setSelectedInvoiceTx(tx)}
+                        className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg" title="Cetak Invoice ARFA FASHION">
+                        <FileText className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
@@ -302,9 +309,17 @@ export const HistoryPage: React.FC = () => {
                         <button
                           onClick={() => setSelectedReceipt(tx)}
                           className="p-1.5 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
-                          title="Cetak Struk Transaksi"
+                          title="Cetak Struk Thermal"
                         >
                           <Printer className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => setSelectedInvoiceTx(tx)}
+                          className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Cetak Invoice ARFA FASHION"
+                        >
+                          <FileText className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -465,7 +480,19 @@ export const HistoryPage: React.FC = () => {
                   className="py-2 px-3.5 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-100 flex items-center gap-1.5"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>Struk</span>
+                  <span>Struk Thermal</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const tx = selectedTxDetail;
+                    setSelectedTxDetail(null);
+                    setSelectedInvoiceTx(tx);
+                  }}
+                  className="py-2 px-3.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-800 font-semibold text-xs hover:bg-blue-100 flex items-center gap-1.5"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Invoice ARFA FASHION</span>
                 </button>
 
                 <button
@@ -479,6 +506,12 @@ export const HistoryPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ARFA FASHION Invoice Modal */}
+      <ArfaInvoiceModal
+        transaction={selectedInvoiceTx}
+        onClose={() => setSelectedInvoiceTx(null)}
+      />
     </div>
   );
 };
