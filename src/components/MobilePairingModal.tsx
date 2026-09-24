@@ -7,6 +7,7 @@ interface MobilePairingModalProps {
   sessionCode: string;
   isScannerConnected: boolean;
   activeScannersCount: number;
+  onResetSession: () => void;
 }
 
 export const MobilePairingModal: React.FC<MobilePairingModalProps> = ({
@@ -15,6 +16,7 @@ export const MobilePairingModal: React.FC<MobilePairingModalProps> = ({
   sessionCode,
   isScannerConnected,
   activeScannersCount,
+  onResetSession,
 }) => {
   const [copied, setCopied] = useState<boolean>(false);
   const [networkIp, setNetworkIp] = useState<string>('');
@@ -182,7 +184,18 @@ export const MobilePairingModal: React.FC<MobilePairingModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 text-right">
+        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
+          <button
+            onClick={() => {
+              if (window.confirm('Buat sesi baru? QR Code HP perlu di-scan ulang.')) {
+                onResetSession();
+              }
+            }}
+            className="py-2 px-4 bg-white border border-slate-300 text-slate-600 rounded-xl text-xs font-semibold hover:bg-slate-100 flex items-center gap-1.5"
+          >
+            <span>🔄</span>
+            <span>Buat Sesi Baru</span>
+          </button>
           <button
             onClick={onClose}
             className="py-2 px-5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800"

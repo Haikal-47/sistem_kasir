@@ -1,25 +1,31 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { usePOS } from '../context/POSContext';
 import { formatRupiah } from '../utils/formatters';
-import { CameraScannerModal } from '../components/CameraScannerModal';
 import { MobilePairingModal } from '../components/MobilePairingModal';
-import { 
-  Barcode, 
-  Search, 
-  ShoppingBag, 
-  Plus, 
-  Minus, 
-  Trash2, 
-  PauseCircle, 
-  PlayCircle, 
+import {
+  Barcode,
+  Search,
+  ShoppingBag,
+  Plus,
+  Minus,
+  Trash2,
+  PauseCircle,
+  PlayCircle,
   ArrowRight,
   AlertCircle,
   Tag,
   Check,
   Database,
   Smartphone,
-  CreditCard
+  CreditCard,
+  ScanLine,
 } from 'lucide-react';
+
+// ─── HID Scanner Config ────────────────────────────────────────────────────────
+// Scanner USB/BT HID mengetik karakter dalam burst sangat cepat (<50ms antar
+// karakter). Ketikan manusia normal membutuhkan >100ms per karakter.
+const SCANNER_MAX_INTERVAL_MS = 50;
+const SCANNER_MIN_LENGTH = 3; // Abaikan buffer terlalu pendek (noise)
 
 export const TransactionPage: React.FC = () => {
   const { 
@@ -49,16 +55,22 @@ export const TransactionPage: React.FC = () => {
   const [scanMessage, setScanMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [discountInput, setDiscountInput] = useState<string>('');
   const [showDiscountModal, setShowDiscountModal] = useState<boolean>(false);
-  const [isCameraScannerOpen, setIsCameraScannerOpen] = useState<boolean>(false);
   // Mobile-only: toggle between products view and cart drawer
   const [mobileShowCart, setMobileShowCart] = useState<boolean>(false);
 
-  // Wireless Mobile Scanner State — uses DB polling (works on Vercel, no WebSocket needed)
+  // ─── HID Scanner Refs ──────────────────────────────────────────────────────
+  // Menggunakan ref (bukan state) agar tidak trigger re-render saat scanner aktif
+  const scanBufferRef = useRef<string>('');
+  const lastKeyTimeRef = useRef<number>(0);
+  // Ref ke elemen input manual barcode (untuk deteksi fokus)
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+
+  // Wireless Mobile Scanner State — uses DB polling
   const [sessionCode] = useState<string>(() => {
-    const saved = sessionStorage.getItem('pos_session_code');
+    const saved = localStorage.getItem('pos_session_code');
     if (saved) return saved;
     const newCode = `KASIR-${Math.floor(1000 + Math.random() * 9000)}`;
-    sessionStorage.setItem('pos_session_code', newCode);
+    localStorage.setItem('pos_session_code', newCode);
     return newCode;
   });
   const [isMobilePairingOpen, setIsMobilePairingOpen] = useState<boolean>(false);
@@ -67,33 +79,119 @@ export const TransactionPage: React.FC = () => {
   const [activeScannersCount, setActiveScannersCount] = useState<number>(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  // ─── Core Barcode Lookup (digunakan oleh semua jalur scan) ─────────────────
+  const processBarcodeLookup = useCallback(
+    (rawCode: string): { success: boolean; productName?: string; price?: number } => {
+      // CLEANING: Bersihkan spasi & karakter aneh sebelum diproses
+      const cleanCode = rawCode.trim();
+      if (!cleanCode) return { success: false };
 
-  // Core barcode lookup logic (used by manual typing, laptop camera, and wireless mobile phone scanner)
-  const processBarcodeLookup = useCallback((code: string): { success: boolean; productName?: string; price?: number } => {
-    const cleanCode = code.trim();
-    if (!cleanCode) return { success: false };
-
-    const found = findProductByBarcode(cleanCode);
-    if (found) {
-      if (found.stock <= 0) {
-        setScanMessage({ text: `Stok produk ${found.name} habis!`, type: 'error' });
-        setTimeout(() => setScanMessage(null), 2500);
-        return { success: false, productName: found.name, price: found.price };
+      const found = findProductByBarcode(cleanCode);
+      if (found) {
+        if (found.stock <= 0) {
+          setScanMessage({ text: `⚠️ Stok ${found.name} habis!`, type: 'error' });
+          setTimeout(() => setScanMessage(null), 2500);
+          return { success: false, productName: found.name, price: found.price };
+        } else {
+          // addToCart sudah handle auto-increment qty jika produk sudah ada
+          addToCart(found, 1);
+          setScanMessage({ text: `✅ ${found.name} — berhasil ditambahkan!`, type: 'success' });
+          setTimeout(() => setScanMessage(null), 2000);
+          return { success: true, productName: found.name, price: found.price };
+        }
       } else {
-        addToCart(found, 1);
-        setScanMessage({ text: `[HP Scanner] ${found.name} berhasil ditambahkan ke keranjang!`, type: 'success' });
+        setScanMessage({ text: `❌ Barcode "${cleanCode}" tidak ditemukan dalam katalog!`, type: 'error' });
         setTimeout(() => setScanMessage(null), 2500);
-        return { success: true, productName: found.name, price: found.price };
+        return { success: false };
       }
-    } else {
-      setScanMessage({ text: `Barcode "${cleanCode}" tidak ditemukan dalam katalog!`, type: 'error' });
-      setTimeout(() => setScanMessage(null), 2500);
-      return { success: false };
-    }
-  }, [findProductByBarcode, addToCart]);
+    },
+    [findProductByBarcode, addToCart]
+  );
 
-  // DB Polling: laptop pulls pending scans from Neon DB every 1.5 seconds (works on Vercel)
+  // ─── GLOBAL HID BARCODE SCANNER LISTENER ──────────────────────────────────
+  // Scanner USB/BT HID terdeteksi sebagai keyboard. Listener ini menangkap
+  // seluruh input keyboard secara global tanpa kasir perlu klik input field.
+  //
+  // Cara kerja Anti-Human Typing Filter:
+  //   • Scanner mengirimkan ±10–20 karakter dalam <200ms total (burst)
+  //   • Jeda antar karakter scanner: ~5–15ms
+  //   • Jeda antar karakter manusia: ~100–300ms
+  //   • Threshold 50ms: jika jeda > 50ms, buffer direset (bukan scanner)
+  // ──────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const tagName = target.tagName.toLowerCase();
+      const isInDiscountInput = showDiscountModal && tagName === 'input';
+      const isInSearchInput = tagName === 'input' && target !== barcodeInputRef.current;
+
+      // Tetap proses shortcut keyboard global (F7, F8, F9)
+      if (e.key === 'F7') {
+        e.preventDefault();
+        barcodeInputRef.current?.focus();
+        return;
+      }
+      if (e.key === 'F8') {
+        e.preventDefault();
+        if (cart.length > 0 && confirm('Bersihkan seluruh item di keranjang?')) clearCart();
+        return;
+      }
+      if (e.key === 'F9') {
+        e.preventDefault();
+        if (cart.length > 0) setIsCheckoutOpen(true);
+        return;
+      }
+
+      // Jika user sedang mengetik di input lain (diskon, search), abaikan
+      if (isInDiscountInput || isInSearchInput) return;
+
+      const now = Date.now();
+      const elapsed = now - lastKeyTimeRef.current;
+      lastKeyTimeRef.current = now;
+
+      // ── Enter = akhir transmisi scanner ──
+      if (e.key === 'Enter') {
+        const barcode = scanBufferRef.current.trim();
+        scanBufferRef.current = '';
+
+        // Jika Enter berasal dari input manual (kasir mengetik lalu Enter)
+        if (target === barcodeInputRef.current) {
+          e.preventDefault();
+          const manualCode = barcodeInput.trim();
+          if (manualCode) {
+            processBarcodeLookup(manualCode);
+            setBarcodeInput('');
+          }
+          return;
+        }
+
+        // Enter dari HID scanner (bukan dari input field manual)
+        if (barcode.length >= SCANNER_MIN_LENGTH) {
+          processBarcodeLookup(barcode);
+        }
+        return;
+      }
+
+      // ── Anti-human typing filter ──
+      // Jika jeda terlalu lama → ini ketikan manusia, bukan scanner → reset buffer
+      if (elapsed > SCANNER_MAX_INTERVAL_MS && scanBufferRef.current.length > 0) {
+        scanBufferRef.current = '';
+      }
+
+      // Tangkap hanya karakter printable (panjang = 1 karakter)
+      if (e.key.length === 1) {
+        // Jika fokus di input manual barcode, biarkan browser handle secara normal
+        if (target === barcodeInputRef.current) return;
+        // Akumulasikan ke buffer scanner HID
+        scanBufferRef.current += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [cart, clearCart, setIsCheckoutOpen, processBarcodeLookup, barcodeInput, showDiscountModal]);
+
+  // ─── DB Polling: Wireless Mobile Phone Scanner ─────────────────────────────
   useEffect(() => {
     const pollPendingScans = async () => {
       try {
@@ -104,15 +202,15 @@ export const TransactionPage: React.FC = () => {
           ? data
           : (data.scans || []);
 
-        setIsScannerConnected(Boolean(data.isScannerConnected));
-        setActiveScannersCount(data.isScannerConnected ? 1 : 0);
+        const connected = Boolean(data.isScannerConnected);
+        setIsScannerConnected(connected);
+        setActiveScannersCount(connected ? 1 : 0);
 
         if (scans.length === 0) return;
 
         setIsScannerPolling(true);
         for (const scan of scans) {
           const result = processBarcodeLookup(scan.barcode);
-          // Mark as processed in DB with lookup result
           try {
             await fetch(`/api/scan/${scan.id}/processed`, {
               method: 'POST',
@@ -123,10 +221,14 @@ export const TransactionPage: React.FC = () => {
                 productPrice: result.price || null,
               }),
             });
-          } catch (e) { /* non-critical */ }
+          } catch (e) {
+            console.error('[Scanner Polling] Failed to mark scan as processed:', e);
+          }
         }
         setTimeout(() => setIsScannerPolling(false), 2000);
-      } catch (e) { /* network error, ignore */ }
+      } catch (e) {
+        console.error('[Scanner Polling] Error:', e);
+      }
     };
 
     pollPendingScans();
@@ -135,31 +237,6 @@ export const TransactionPage: React.FC = () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [sessionCode, processBarcodeLookup]);
-
-  // Auto focus barcode input on mount and shortcut keys
-  useEffect(() => {
-    barcodeInputRef.current?.focus();
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F7') {
-        e.preventDefault();
-        barcodeInputRef.current?.focus();
-      } else if (e.key === 'F8') {
-        e.preventDefault();
-        if (cart.length > 0 && confirm('Bersihkan seluruh item di keranjang?')) {
-          clearCart();
-        }
-      } else if (e.key === 'F9') {
-        e.preventDefault();
-        if (cart.length > 0) {
-          setIsCheckoutOpen(true);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, clearCart, setIsCheckoutOpen]);
 
   // Categories list
   const categories = ['Semua', ...Array.from(new Set(products.map(p => p.category)))];
@@ -175,35 +252,17 @@ export const TransactionPage: React.FC = () => {
     return matchesCategory && matchesQuery;
   });
 
-  // Handle Form submit (via Enter key)
+  // ─── Manual Barcode Form Submit ────────────────────────────────────────────
   const handleBarcodeSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (barcodeInput.trim()) {
-      processBarcodeLookup(barcodeInput);
+    const code = barcodeInput.trim();
+    if (code) {
+      processBarcodeLookup(code);
       setBarcodeInput('');
-    } else {
-      // If empty, open camera scanner
-      setIsCameraScannerOpen(true);
     }
   };
 
-  // Handle Click on the "Scan (Enter)" button directly
-  const handleScanButtonClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (barcodeInput.trim()) {
-      processBarcodeLookup(barcodeInput);
-      setBarcodeInput('');
-    } else {
-      setIsCameraScannerOpen(true);
-    }
-  };
-
-  // Callback when laptop camera reads a barcode
-  const handleCameraScanSuccess = (decodedBarcode: string) => {
-    processBarcodeLookup(decodedBarcode);
-  };
-
-  // Apply discount
+  // ─── Apply Discount ────────────────────────────────────────────────────────
   const handleApplyDiscount = () => {
     const val = Number(discountInput) || 0;
     if (val >= 0 && val <= cartSubtotal) {
@@ -226,26 +285,28 @@ export const TransactionPage: React.FC = () => {
         {/* Top Scan & Search Bar */}
         <div className="p-4 bg-white border-b border-slate-200 space-y-3 shadow-xs">
           <div className="flex items-center gap-2.5">
-            {/* Dedicated Barcode Scanner Input */}
+            {/* Manual Barcode Input (fallback / ketik manual) */}
             <form onSubmit={handleBarcodeSubmit} className="flex-1 relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-brand-600">
-                <Barcode className="w-5 h-5" />
+                <ScanLine className="w-5 h-5" />
               </div>
               <input
                 ref={barcodeInputRef}
+                id="barcode-manual-input"
                 type="text"
                 value={barcodeInput}
                 onChange={(e) => setBarcodeInput(e.target.value)}
-                placeholder="Scan / Ketik Barcode..."
-                className="w-full pl-11 pr-24 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-brand-600 focus:bg-white rounded-xl text-sm font-mono text-slate-900 outline-hidden transition-all placeholder:font-sans placeholder:text-slate-400"
+                placeholder="Scan barcode fisik langsung... atau ketik manual lalu Enter"
+                autoComplete="off"
+                className="w-full pl-11 pr-28 py-2.5 bg-slate-50 border-2 border-slate-200 focus:border-brand-600 focus:bg-white rounded-xl text-sm font-mono text-slate-900 outline-hidden transition-all placeholder:font-sans placeholder:text-slate-400"
               />
               <button
-                type="button"
-                onClick={handleScanButtonClick}
+                type="submit"
                 className="absolute right-1.5 top-1.5 bottom-1.5 px-3 bg-brand-600 text-white rounded-lg text-xs font-semibold hover:bg-brand-700 transition-colors flex items-center gap-1 shadow-xs active:scale-[0.98]"
-                title="Klik untuk scan dengan kamera / Enter untuk proses barcode"
+                title="Proses barcode yang diketik manual (Enter)"
               >
-                Scan (Enter)
+                <Barcode className="w-3.5 h-3.5" />
+                Proses
               </button>
             </form>
 
@@ -289,16 +350,29 @@ export const TransactionPage: React.FC = () => {
               className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 focus:border-brand-600 focus:bg-white rounded-xl text-xs text-slate-800 outline-hidden transition-all"
             />
           </div>
+          {/* HID Scanner Status Banner */}
+          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-60"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-500"></span>
+              </span>
+              <span className="text-slate-600 font-semibold">HID Scanner Aktif</span>
+              <span className="text-slate-400">— Arahkan scanner USB/BT ke layar ini, scan langsung tanpa klik</span>
+            </div>
+          </div>
+
+          {/* Scan Feedback Message */}
           {scanMessage && (
             <div className={`text-xs px-3 py-2 rounded-lg flex items-center gap-2 font-medium animate-in fade-in duration-150 ${
               scanMessage.type === 'success'
-                ? 'bg-emerald-50 text-brand-800 border border-brand-200'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                 : 'bg-rose-50 text-rose-800 border border-rose-200'
             }`}>
               {scanMessage.type === 'success' ? (
-                <Check className="w-4 h-4 text-brand-600" />
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
               ) : (
-                <AlertCircle className="w-4 h-4 text-rose-600" />
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               )}
               <span>{scanMessage.text}</span>
             </div>
@@ -492,11 +566,11 @@ export const TransactionPage: React.FC = () => {
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
               <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-3">
-                <ShoppingBag className="w-8 h-8 text-slate-300" />
+                <ScanLine className="w-8 h-8 text-slate-300" />
               </div>
               <p className="font-semibold text-sm text-slate-700">Keranjang Masih Kosong</p>
               <p className="text-xs text-slate-400 mt-1 max-w-[200px]">
-                Scan barcode barang atau gunakan tombol <strong>'Scanner HP'</strong> untuk scan pakai kamera ponsel.
+                Arahkan <strong>scanner barcode USB/BT</strong> ke produk — item otomatis masuk tanpa klik!
               </p>
             </div>
           ) : (
@@ -687,13 +761,6 @@ export const TransactionPage: React.FC = () => {
         </div>
       )}
 
-      {/* Laptop Camera Barcode Scanner Modal (Triggered by 'Scan (Enter)' button) */}
-      <CameraScannerModal
-        isOpen={isCameraScannerOpen}
-        onClose={() => setIsCameraScannerOpen(false)}
-        onScanSuccess={handleCameraScanSuccess}
-      />
-
       {/* Wireless Mobile Phone Scanner Pairing Modal */}
       <MobilePairingModal
         isOpen={isMobilePairingOpen}
@@ -701,6 +768,10 @@ export const TransactionPage: React.FC = () => {
         sessionCode={sessionCode}
         isScannerConnected={isScannerConnected}
         activeScannersCount={activeScannersCount}
+        onResetSession={() => {
+          localStorage.removeItem('pos_session_code');
+          window.location.reload();
+        }}
       />
     </div>
   );
