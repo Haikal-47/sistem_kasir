@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice BY.ELFARA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@1,600&display=swap" rel="stylesheet">
+  
+  <style>
+    /* ==========================================================================
+       RESET & BASE STYLING
+       ========================================================================== */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background-color: #f3f4f6;
+      color: #111827;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Screen Action Bar (Floating toolbar) */
+    .action-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      background: white;
+      padding: 10px 20px;
+      border-radius: 9999px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      z-index: 100;
+    }
+
+    .btn-print {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #004b93;
+      color: #ffffff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 9999px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 75, 147, 0.35);
+      transition: all 0.2s ease;
+    }
+
+    .btn-print:hover {
+      background: #00366a;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(0, 75, 147, 0.45);
+    }
+
+    .btn-print:active {
+      transform: translateY(0);
+    }
+
+    .btn-print svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* ==========================================================================
+       INVOICE CONTAINER (A4 SHEET RATIO)
+       ========================================================================== */
+    .invoice-card {
+      width: 100%;
+      max-width: 800px;
+      min-height: 1100px;
+      background: #ffffff;
+      padding: 56px 54px 60px 54px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
+      border-radius: 4px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ==========================================================================
+       1. HEADER SECTION (INVOICE & LOGO BY.ELFARA)
+       ========================================================================== */
+    .invoice-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 24px;
+    }
+
+    .invoice-title {
+      font-size: 46px;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      color: #050505;
+      line-height: 1;
+      padding-top: 18px;
+    }
+
+    .brand-identity {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* Soft Pink Circular Logo */
+    .brand-logo-circle {
+      width: 78px;
+      height: 78px;
+      border-radius: 50%;
+      background: radial-gradient(circle at center, #fff0f3 0%, #fae1e6 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      box-shadow: 0 2px 8px rgba(225, 29, 72, 0.08);
+      border: 1px solid rgba(244, 114, 182, 0.2);
+    }
+
+    .brand-logo-text {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-style: italic;
+      font-weight: 600;
+      font-size: 15px;
+      color: #db2777;
+      letter-spacing: 0.2px;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Delicate floral / leaf wreath around logo */
+    .brand-wreath-icon {
+      position: absolute;
+      width: 90%;
+      height: 90%;
+      pointer-events: none;
+      opacity: 0.75;
+    }
+
+    .brand-name {
+      margin-top: 8px;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: #050505;
+      text-transform: uppercase;
+    }
+
+    /* Double Horizontal Divider */
+    .divider-double {
+      border: none;
+      border-top: 1px solid #d1d5db;
+      border-bottom: 1px solid #d1d5db;
+      height: 3px;
+      margin-bottom: 28px;
+      width: 100%;
+    }
+
+    /* ==========================================================================
+       2. CUSTOMER & INVOICE DETAILS
+       ========================================================================== */
+    .customer-info-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-bottom: 26px;
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .info-row {
+      display: flex;
+      align-items: baseline;
+    }
+
+    .info-label {
+      width: 120px;
+      font-weight: 800;
+      color: #000000;
+      flex-shrink: 0;
+    }
+
+    .info-colon {
+      width: 18px;
+      font-weight: 800;
+      color: #000000;
+      flex-shrink: 0;
+    }
+
+    .info-value {
+      color: #000000;
+      font-weight: 700;
+    }
+
+    /* ==========================================================================
+       3. SHOPPING ITEMS TABLE
+       ========================================================================== */
+    .table-container {
+      width: 100%;
+      margin-bottom: 24px;
+    }
+
+    .invoice-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    /* Header: Royal Deep Blue */
+    .invoice-table thead tr {
+      background-color: #004b93;
+      color: #ffffff;
+    }
+
+    .invoice-table th {
+      padding: 10px 8px;
+      font-size: 13.5px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      border-right: 1.5px solid #ffffff;
+      text-align: center;
+    }
+
+    .invoice-table th:last-child {
+      border-right: none;
+    }
+
+    .col-no {
+      width: 60px;
+    }
+
+    .col-desc {
+      width: 44%;
+      text-align: left !important;
+      padding-left: 18px !important;
+    }
+
+    .col-qty {
+      width: 65px;
+    }
+
+    .col-price {
+      width: 135px;
+    }
+
+    .col-total {
+      width: 150px;
+    }
+
+    /* Table Body */
+    .invoice-table tbody tr {
+      border-bottom: 1.5px solid #4b5563;
+    }
+
+    .invoice-table td {
+      padding: 7px 8px;
+      vertical-align: middle;
+      font-size: 14px;
+      color: #000000;
+    }
+
+    .td-no {
+      text-align: center;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .td-desc {
+      text-align: left;
+      padding-left: 18px !important;
+    }
+
+    .product-title {
+      font-weight: 800;
+      color: #000000;
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .product-variant {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #111827;
+      margin-top: 1px;
+    }
+
+    .td-qty {
+      text-align: center;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .td-price {
+      text-align: center;
+      font-weight: 800;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .td-total {
+      text-align: center;
+      font-weight: 800;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    /* Empty ledger rows */
+    .tr-empty {
+      height: 38px;
+      border-bottom: 1.5px solid #4b5563;
+    }
+
+    .tr-empty td {
+      padding: 0;
+    }
+
+    /* ==========================================================================
+       4. SUB TOTAL & SUMMARY BAR
+       ========================================================================== */
+    .subtotal-section {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      margin-bottom: 24px;
+      margin-top: 8px;
+    }
+
+    .subtotal-label {
+      flex: 1;
+      font-size: 19px;
+      font-weight: 800;
+      color: #374151;
+      padding-left: 6px;
+    }
+
+    .subtotal-boxes {
+      display: flex;
+      align-items: center;
+      gap: 0;
+    }
+
+    .subtotal-qty-box {
+      width: 65px;
+      background-color: #004b93;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 14.5px;
+      text-align: center;
+      padding: 8px 0;
+    }
+
+    .subtotal-spacer {
+      width: 135px;
+    }
+
+    .subtotal-price-box {
+      width: 150px;
+      background-color: #004b93;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 14.5px;
+      text-align: center;
+      padding: 8px 0;
+      white-space: nowrap;
+    }
+
+    /* ==========================================================================
+       5. PAYMENT & FOOTER INFO
+       ========================================================================== */
+    .payment-info {
+      margin-top: 12px;
+      font-size: 15.5px;
+      line-height: 1.35;
+      color: #1f2937;
+    }
+
+    .payment-title {
+      font-weight: 800;
+      color: #1f2937;
+      margin-bottom: 2px;
+    }
+
+    .payment-account {
+      font-weight: 800;
+      color: #1f2937;
+    }
+
+    .payment-holder {
+      font-weight: 800;
+      color: #1f2937;
+    }
+
+    /* ==========================================================================
+       PRINT MEDIA QUERY (EXACT PRINTING)
+       ========================================================================== */
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 12mm 15mm;
+      }
+
+      body {
+        background: transparent !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      .action-bar {
+        display: none !important;
+      }
+
+      .invoice-card {
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        max-width: 100% !important;
+        min-height: auto !important;
+        width: 100% !important;
+      }
+
+      /* Force background colors and SVG fills to print accurately */
+      *, *::before, *::after {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+
+      .invoice-table thead tr,
+      .subtotal-qty-box,
+      .subtotal-price-box {
+        background-color: #004b93 !important;
+        color: #ffffff !important;
+      }
+
+      .brand-logo-circle {
+        background: #fce7f3 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Floating Print Trigger (Screen Only) -->
+  <aside class="action-bar">
+    <button class="btn-print" onclick="window.print()" title="Cetak atau Simpan ke PDF">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24-1.04-.6-2.04-1.06-2.969A7.5 7.5 0 0119.5 8.25m-2.22 5.579A7.5 7.5 0 014.5 15.75m15 0a7.5 7.5 0 01-15 0m15 0v3.75a2.25 2.25 0 01-2.25 2.25H6.75a2.25 2.25 0 01-2.25-2.25V15.75" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3.75A2.25 2.25 0 018.25 1.5h7.5A2.25 2.25 0 0118 3.75V9m-12 0h12" />
+      </svg>
+      Cetak Invoice (PDF)
+    </button>
+  </aside>
+
+  <!-- Main Invoice Card -->
+  <main class="invoice-card" id="invoice">
+    
+    <!-- Header -->
+    <header class="invoice-header">
+      <h1 class="invoice-title">INVOICE</h1>
+
+      <div class="brand-identity">
+        <div class="brand-logo-circle">
+          <!-- Laurel wreath SVG ornament -->
+          <svg class="brand-wreath-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="42" stroke="#f472b6" stroke-width="1.2" stroke-dasharray="3 3"/>
+            <path d="M48 10C50 15 45 18 43 20" stroke="#f472b6" stroke-width="1" stroke-linecap="round"/>
+            <path d="M52 10C50 15 55 18 57 20" stroke="#f472b6" stroke-width="1" stroke-linecap="round"/>
+            <path d="M48 90C50 85 45 82 43 80" stroke="#f472b6" stroke-width="1" stroke-linecap="round"/>
+            <path d="M52 90C50 85 55 82 57 80" stroke="#f472b6" stroke-width="1" stroke-linecap="round"/>
+          </svg>
+          <span class="brand-logo-text">By.Elfara</span>
+        </div>
+        <div class="brand-name">BY.ELFARA</div>
+      </div>
+    </header>
+
+    <!-- Double Divider -->
+    <hr class="divider-double" />
+
+    <!-- Customer Information -->
+    <section class="customer-info-grid" aria-label="Informasi Pelanggan">
+      <div class="info-row">
+        <span class="info-label">Kepada</span>
+        <span class="info-colon">:</span>
+        <span class="info-value">Fransiska</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Alamat</span>
+        <span class="info-colon">:</span>
+        <span class="info-value"></span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">No.</span>
+        <span class="info-colon">:</span>
+        <span class="info-value">-</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Invoice</span>
+        <span class="info-colon">:</span>
+        <span class="info-value"></span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Tanggal</span>
+        <span class="info-colon">:</span>
+        <span class="info-value">22 September 2026</span>
+      </div>
+    </section>
+
+    <!-- Shopping Items Table -->
+    <section class="table-container" aria-label="Tabel Item Belanja">
+      <table class="invoice-table">
+        <thead>
+          <tr>
+            <th class="col-no">NO.</th>
+            <th class="col-desc">DESKRIPSI</th>
+            <th class="col-qty">JML</th>
+            <th class="col-price">HARGA</th>
+            <th class="col-total">TOTAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Item 1 -->
+          <tr>
+            <td class="td-no">1</td>
+            <td class="td-desc">
+              <div class="product-title">Atasan stripe polo kerah jeans</div>
+              <div class="product-variant">(Hitam, abu , Bw)</div>
+            </td>
+            <td class="td-qty">3</td>
+            <td class="td-price">Rp. 145.000</td>
+            <td class="td-total">Rp. 435.000</td>
+          </tr>
+
+          <!-- Item 2 -->
+          <tr>
+            <td class="td-no">2</td>
+            <td class="td-desc">
+              <div class="product-title">Atasan stripe polo kerah jeans polos</div>
+              <div class="product-variant">(Hitam, Bw, Cream, Mocca)</div>
+            </td>
+            <td class="td-qty">12</td>
+            <td class="td-price">Rp. 139.000</td>
+            <td class="td-total">Rp. 1.668.000</td>
+          </tr>
+
+          <!-- Item 3 -->
+          <tr>
+            <td class="td-no">3</td>
+            <td class="td-desc">
+              <div class="product-title">Cardigan stripe kerah jeans</div>
+              <div class="product-variant">(Hitam,Coklat, Bw, Navy)</div>
+            </td>
+            <td class="td-qty">4</td>
+            <td class="td-price">Rp. 146.000</td>
+            <td class="td-total">Rp. 584.000</td>
+          </tr>
+
+          <!-- Item 4 -->
+          <tr>
+            <td class="td-no">4</td>
+            <td class="td-desc">
+              <div class="product-title">Cardigan polo stripe</div>
+              <div class="product-variant">(Bata, Bw, Navy)</div>
+            </td>
+            <td class="td-qty">3</td>
+            <td class="td-price">Rp. 155.000</td>
+            <td class="td-total">Rp. 465.000</td>
+          </tr>
+
+          <!-- Empty ledger lines matching original sample -->
+          <tr class="tr-empty"><td colspan="5"></td></tr>
+          <tr class="tr-empty"><td colspan="5"></td></tr>
+          <tr class="tr-empty"><td colspan="5"></td></tr>
+          <tr class="tr-empty"><td colspan="5"></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Sub Total Section -->
+    <section class="subtotal-section" aria-label="Total Pembelian">
+      <div class="subtotal-label">Sub Total</div>
+      <div class="subtotal-boxes">
+        <div class="subtotal-qty-box">22</div>
+        <div class="subtotal-spacer"></div>
+        <div class="subtotal-price-box">Rp.3.152.000</div>
+      </div>
+    </section>
+
+    <!-- Payment Account Footer -->
+    <footer class="payment-info">
+      <div class="payment-title">Pembayaran:</div>
+      <div class="payment-account">7160179109 BCA a/n</div>
+      <div class="payment-holder">Amelia Azizah</div>
+    </footer>
+
+  </main>
+
+</body>
+</html>
