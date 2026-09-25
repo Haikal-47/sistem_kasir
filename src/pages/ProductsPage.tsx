@@ -33,7 +33,7 @@ export const ProductsPage: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     brand: '',
-    category: 'Minuman',
+    category: 'Atasan & Kemeja',
     price: 0,
     costPrice: 0,
     stock: 10,
@@ -58,7 +58,7 @@ export const ProductsPage: React.FC = () => {
     setFormData({
       name: '',
       brand: '',
-      category: 'Minuman',
+      category: 'Atasan & Kemeja',
       price: 0,
       costPrice: 0,
       stock: 10,
@@ -404,7 +404,7 @@ export const ProductsPage: React.FC = () => {
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Contoh: Aqua Air Mineral 600ml"
+                  placeholder="Contoh: Kemeja Linen Oversized Casual"
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden font-medium"
                 />
               </div>
@@ -420,7 +420,7 @@ export const ProductsPage: React.FC = () => {
                     required
                     value={formData.brand}
                     onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                    placeholder="Contoh: Danone"
+                    placeholder="Contoh: ARFA FASHION"
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden"
                   />
                 </div>
@@ -434,7 +434,7 @@ export const ProductsPage: React.FC = () => {
                     required
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    placeholder="Contoh: Minuman"
+                    placeholder="Contoh: Atasan & Kemeja"
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden"
                   />
                 </div>

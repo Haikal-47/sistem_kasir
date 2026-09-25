@@ -74,7 +74,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('pos_products');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        const hasOldGrocery = Array.isArray(parsed) && parsed.some((p: Product) =>
+          p.name?.toLowerCase().includes('aqua') ||
+          p.name?.toLowerCase().includes('indomie') ||
+          p.category === 'Minuman' ||
+          p.category === 'Makanan Instan'
+        );
+        if (!hasOldGrocery && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) { console.error(e); }
     }
     return INITIAL_PRODUCTS;
   });
@@ -82,7 +93,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     const saved = localStorage.getItem('pos_transactions');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        const hasOldGroceryTx = Array.isArray(parsed) && parsed.some((t: Transaction) =>
+          t.items?.some(it => it.name?.toLowerCase().includes('aqua') || it.name?.toLowerCase().includes('indomie'))
+        );
+        if (!hasOldGroceryTx && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) { console.error(e); }
     }
     return INITIAL_TRANSACTIONS;
   });
@@ -139,10 +158,23 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const prodData = await prodRes.json();
           const txData = await txRes.json();
           if (Array.isArray(prodData) && prodData.length > 0) {
-            setProducts(prodData);
+            const hasOldGrocery = prodData.some((p: Product) =>
+              p.name?.toLowerCase().includes('aqua') ||
+              p.name?.toLowerCase().includes('indomie') ||
+              p.category === 'Minuman' ||
+              p.category === 'Makanan Instan'
+            );
+            if (!hasOldGrocery) {
+              setProducts(prodData);
+            }
           }
           if (Array.isArray(txData)) {
-            setTransactions(txData);
+            const hasOldTx = txData.some((t: Transaction) =>
+              t.items?.some(it => it.name?.toLowerCase().includes('aqua') || it.name?.toLowerCase().includes('indomie'))
+            );
+            if (!hasOldTx) {
+              setTransactions(txData);
+            }
           }
           if (cashierRes.ok) {
             const cashierData = await cashierRes.json();
