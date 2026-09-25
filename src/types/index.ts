@@ -71,9 +71,12 @@ export interface Transaction {
   customerNote?: string;
 }
 
+export type UserRole = 'super_admin' | 'kasir';
+
 export interface CashierProfile {
   id: string;
   name: string;
+  role: UserRole;
   shift: string;
   outletName: string;
   outletAddress: string;

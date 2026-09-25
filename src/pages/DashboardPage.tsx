@@ -25,7 +25,8 @@ export const DashboardPage: React.FC = () => {
     confirmTransferPayment, 
     cancelTransaction, 
     setActiveTab, 
-    updateProduct 
+    updateProduct,
+    isSuperAdmin
   } = usePOS();
 
   const [previewProof, setPreviewProof] = useState<string | null>(null);
@@ -261,13 +262,19 @@ export const DashboardPage: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => updateProduct(p.id, { stock: p.stock + 10 })}
-                  className="py-1 px-2.5 rounded-lg bg-white border border-rose-200 text-slate-700 text-[11px] font-bold hover:bg-rose-100 transition-colors shadow-2xs whitespace-nowrap"
-                  title="Tambah 10 unit ke stok"
-                >
-                  +10 Stok
-                </button>
+                {isSuperAdmin ? (
+                  <button
+                    onClick={() => updateProduct(p.id, { stock: p.stock + 10 })}
+                    className="py-1 px-2.5 rounded-lg bg-white border border-rose-200 text-slate-700 text-[11px] font-bold hover:bg-rose-100 transition-colors shadow-2xs whitespace-nowrap"
+                    title="Tambah 10 unit ke stok"
+                  >
+                    +10 Stok
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-slate-400 font-medium italic">
+                    Perlu Super Admin
+                  </span>
+                )}
               </div>
             ))}
           </div>

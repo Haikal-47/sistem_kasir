@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Product, CartItem, Transaction, CashierProfile, PaymentMethodConfig, ActiveTab } from '../types';
-import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS, INITIAL_CASHIER, INITIAL_PAYMENT_METHODS } from '../data/initialData';
+import { Product, CartItem, Transaction, CashierProfile, PaymentMethodConfig, ActiveTab, UserRole } from '../types';
+import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS, INITIAL_CASHIER, SUPER_ADMIN_PROFILE, INITIAL_PAYMENT_METHODS } from '../data/initialData';
 
 interface POSContextType {
   activeTab: ActiveTab;
@@ -55,9 +55,11 @@ interface POSContextType {
   isCheckoutOpen: boolean;
   setIsCheckoutOpen: (open: boolean) => void;
   
-  // Cashier Info
+  // Cashier Info & Role Management
   cashier: CashierProfile;
   updateCashier: (updates: Partial<CashierProfile>) => void;
+  isSuperAdmin: boolean;
+  switchRole: (role: UserRole) => void;
   
   // Audio & Notification
   playBeep: () => void;
@@ -113,13 +115,43 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const parsed = JSON.parse(saved);
         if (parsed.outletName === 'MINIMARKET KASIR PRO') {
           parsed.outletName = 'ARFA FASHION';
-          localStorage.setItem('pos_cashier', JSON.stringify(parsed));
+        }
+        if (!parsed.role) {
+          parsed.role = parsed.name?.toLowerCase().includes('admin') ? 'super_admin' : 'kasir';
         }
         return parsed;
       } catch (e) { console.error(e); }
     }
     return INITIAL_CASHIER;
   });
+
+  const isSuperAdmin = cashier.role === 'super_admin';
+
+  const switchRole = (newRole: UserRole) => {
+    if (newRole === 'super_admin') {
+      const updated: CashierProfile = {
+        ...SUPER_ADMIN_PROFILE,
+        outletName: cashier.outletName || 'ARFA FASHION',
+        outletAddress: cashier.outletAddress || 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
+        outletPhone: cashier.outletPhone || '021-5550192',
+      };
+      setCashier(updated);
+      localStorage.setItem('pos_cashier', JSON.stringify(updated));
+      sessionStorage.setItem('pos_role', 'super_admin');
+      sessionStorage.setItem('pos_login_name', updated.name);
+    } else {
+      const updated: CashierProfile = {
+        ...INITIAL_CASHIER,
+        outletName: cashier.outletName || 'ARFA FASHION',
+        outletAddress: cashier.outletAddress || 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
+        outletPhone: cashier.outletPhone || '021-5550192',
+      };
+      setCashier(updated);
+      localStorage.setItem('pos_cashier', JSON.stringify(updated));
+      sessionStorage.setItem('pos_role', 'kasir');
+      sessionStorage.setItem('pos_login_name', updated.name);
+    }
+  };
 
   const [cart, setCart] = useState<CartItem[]>(() => {
     const saved = localStorage.getItem('pos_cart');
@@ -309,6 +341,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Product operations
   const addProduct = (data: Omit<Product, 'id'>): Product => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya role Super Admin yang dapat menambah produk baru.');
+      return {} as Product;
+    }
     const newProduct: Product = {
       ...data,
       id: `PRD-${Date.now().toString().slice(-4)}`,
@@ -325,6 +361,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya role Super Admin yang dapat mengedit produk.');
+      return;
+    }
     setProducts(prev =>
       prev.map(p => (p.id === id ? { ...p, ...updates } : p))
     );
@@ -345,6 +385,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteProduct = (id: string) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya role Super Admin yang dapat menghapus produk.');
+      return;
+    }
     setProducts(prev => prev.filter(p => p.id !== id));
     removeFromCart(id);
 
@@ -360,6 +404,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Payment Method operations
   const addPaymentMethod = (data: Omit<PaymentMethodConfig, 'id'>) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya role Super Admin yang dapat menambah metode pembayaran.');
+      return;
+    }
     const newMethod: PaymentMethodConfig = {
       ...data,
       id: `PM-${Date.now().toString().slice(-6)}`,
@@ -374,6 +422,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updatePaymentMethod = (id: string, updates: Partial<PaymentMethodConfig>) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya role Super Admin yang dapat mengedit metode pembayaran.');
+      return;
+    }
     setPaymentMethods(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
 
     fetch(`/api/payment-methods/${id}`, {
@@ -384,6 +436,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deletePaymentMethod = (id: string) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya role Super Admin yang dapat menghapus metode pembayaran.');
+      return;
+    }
     setPaymentMethods(prev => prev.filter(m => m.id !== id));
 
     fetch(`/api/payment-methods/${id}`, {
@@ -618,6 +674,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsCheckoutOpen,
         cashier,
         updateCashier,
+        isSuperAdmin,
+        switchRole,
         playBeep,
         resetToDemoData,
       }}

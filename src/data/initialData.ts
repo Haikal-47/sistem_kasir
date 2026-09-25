@@ -1,13 +1,47 @@
-import { Product, Transaction, CashierProfile, PaymentMethodConfig } from '../types';
+import { Product, Transaction, CashierProfile, PaymentMethodConfig, UserRole } from '../types';
+
+export const SUPER_ADMIN_PROFILE: CashierProfile = {
+  id: 'ADM-001',
+  name: 'Super Admin',
+  role: 'super_admin',
+  shift: 'Semua Shift (Full Akses)',
+  outletName: 'ARFA FASHION',
+  outletAddress: 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
+  outletPhone: '021-5550192',
+};
 
 export const INITIAL_CASHIER: CashierProfile = {
   id: 'CSH-001',
   name: 'Budi Pratama',
+  role: 'kasir',
   shift: 'Shift 1 (07:00 - 15:00)',
   outletName: 'ARFA FASHION',
   outletAddress: 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
   outletPhone: '021-5550192',
 };
+
+export const AVAILABLE_ROLES: {
+  role: UserRole;
+  name: string;
+  badge: string;
+  tagline: string;
+  description: string;
+}[] = [
+  {
+    role: 'super_admin',
+    name: 'Super Admin',
+    badge: '👑 Super Admin',
+    tagline: 'Full Access (Kelola Produk & Metode)',
+    description: 'Bisa tambah, edit, dan hapus produk serta kelola metode pembayaran.',
+  },
+  {
+    role: 'kasir',
+    name: 'Kasir',
+    badge: '👤 Kasir',
+    tagline: 'View Only (Katalog & Metode)',
+    description: 'Bisa memproses transaksi kasir, namun hanya bisa melihat katalog produk dan metode pembayaran.',
+  },
+];
 
 export const INITIAL_PRODUCTS: Product[] = [
   {

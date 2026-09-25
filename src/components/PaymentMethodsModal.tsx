@@ -58,7 +58,7 @@ const EMPTY_FORM = {
 };
 
 export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen, onClose }) => {
-  const { paymentMethods, addPaymentMethod, updatePaymentMethod, deletePaymentMethod } = usePOS();
+  const { paymentMethods, addPaymentMethod, updatePaymentMethod, deletePaymentMethod, isSuperAdmin } = usePOS();
 
   const [showForm, setShowForm] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -68,6 +68,10 @@ export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen
   if (!isOpen) return null;
 
   const handleOpenAdd = () => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang dapat menambah metode pembayaran.');
+      return;
+    }
     setEditingId(null);
     setForm(EMPTY_FORM);
     setFormError('');
@@ -75,6 +79,10 @@ export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen
   };
 
   const handleOpenEdit = (m: PaymentMethodConfig) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang dapat mengedit metode pembayaran.');
+      return;
+    }
     setEditingId(m.id);
     setForm({
       name: m.name,
@@ -117,6 +125,10 @@ export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen
   };
 
   const handleDelete = (m: PaymentMethodConfig) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang dapat menghapus metode pembayaran.');
+      return;
+    }
     if (m.isDefault) return;
     if (confirm(`Hapus metode pembayaran "${m.name}"?`)) {
       deletePaymentMethod(m.id);
@@ -188,50 +200,66 @@ export const PaymentMethodsModal: React.FC<PaymentMethodsModalProps> = ({ isOpen
 
                     {/* Controls */}
                     <div className="flex items-center gap-1 shrink-0">
-                      {/* Active toggle */}
-                      <button
-                        onClick={() => updatePaymentMethod(m.id, { isActive: !m.isActive })}
-                        className="p-1.5 rounded-lg hover:bg-white/60 transition-colors"
-                        title={m.isActive ? 'Nonaktifkan' : 'Aktifkan'}
-                      >
-                        {m.isActive
-                          ? <ToggleRight className={`w-5 h-5 ${c.text}`} />
-                          : <ToggleLeft className="w-5 h-5 text-slate-400" />
-                        }
-                      </button>
+                      {isSuperAdmin ? (
+                        <>
+                          {/* Active toggle */}
+                          <button
+                            onClick={() => updatePaymentMethod(m.id, { isActive: !m.isActive })}
+                            className="p-1.5 rounded-lg hover:bg-white/60 transition-colors"
+                            title={m.isActive ? 'Nonaktifkan' : 'Aktifkan'}
+                          >
+                            {m.isActive
+                              ? <ToggleRight className={`w-5 h-5 ${c.text}`} />
+                              : <ToggleLeft className="w-5 h-5 text-slate-400" />
+                            }
+                          </button>
 
-                      {/* Edit */}
-                      <button
-                        onClick={() => handleOpenEdit(m)}
-                        className="p-1.5 rounded-lg hover:bg-white/60 transition-colors text-slate-500 hover:text-slate-800"
-                        title="Edit Metode"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
+                          {/* Edit */}
+                          <button
+                            onClick={() => handleOpenEdit(m)}
+                            className="p-1.5 rounded-lg hover:bg-white/60 transition-colors text-slate-500 hover:text-slate-800"
+                            title="Edit Metode"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
 
-                      {/* Delete (disabled for default) */}
-                      {!m.isDefault && (
-                        <button
-                          onClick={() => handleDelete(m)}
-                          className="p-1.5 rounded-lg hover:bg-rose-50 transition-colors text-slate-400 hover:text-rose-600"
-                          title="Hapus Metode"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                          {/* Delete (disabled for default) */}
+                          {!m.isDefault && (
+                            <button
+                              onClick={() => handleDelete(m)}
+                              className="p-1.5 rounded-lg hover:bg-rose-50 transition-colors text-slate-400 hover:text-rose-600"
+                              title="Hapus Metode"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                          m.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'
+                        }`}>
+                          {m.isActive ? 'Aktif' : 'Nonaktif'}
+                        </span>
                       )}
                     </div>
                   </div>
                 );
               })}
 
-              {/* Add New Button */}
-              <button
-                onClick={handleOpenAdd}
-                className="w-full py-3 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50/50 transition-all flex items-center justify-center gap-2 text-sm font-semibold"
-              >
-                <Plus className="w-4 h-4" />
-                Tambah Metode Pembayaran Baru
-              </button>
+              {/* Add New Button (Super Admin only) */}
+              {isSuperAdmin ? (
+                <button
+                  onClick={handleOpenAdd}
+                  className="w-full py-3 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50/50 transition-all flex items-center justify-center gap-2 text-sm font-semibold"
+                >
+                  <Plus className="w-4 h-4" />
+                  Tambah Metode Pembayaran Baru
+                </button>
+              ) : (
+                <div className="py-2.5 px-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 text-center font-medium">
+                  Mode Lihat Saja (Role: Kasir) • Pengaturan metode pembayaran dibatasi untuk Super Admin.
+                </div>
+              )}
             </div>
           )}
 

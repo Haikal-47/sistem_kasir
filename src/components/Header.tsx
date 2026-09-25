@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { usePOS } from '../context/POSContext';
-import { Clock, ShieldCheck, AlertCircle, HelpCircle, X } from 'lucide-react';
+import { Clock, ShieldCheck, AlertCircle, HelpCircle, X, Crown, User, ArrowLeftRight } from 'lucide-react';
 import { ArfaLogo } from './ArfaLogo';
 
 export const Header: React.FC = () => {
-  const { cashier, pendingConfirmations, setActiveTab } = usePOS();
+  const { cashier, pendingConfirmations, setActiveTab, isSuperAdmin, switchRole } = usePOS();
   const [time, setTime] = useState<Date>(new Date());
   const [showShortcutModal, setShowShortcutModal] = useState<boolean>(false);
 
@@ -66,11 +66,44 @@ export const Header: React.FC = () => {
             </button>
           )}
 
-          {/* Cashier Badge – hidden on very small screens */}
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
-            <ShieldCheck className="w-4 h-4 text-brand-600 shrink-0" />
-            <span className="hidden lg:inline">Kasir: </span>
-            <strong className="text-slate-800">{cashier.name.split(' ')[0]}</strong>
+          {/* Role & Cashier Badge with Quick Switch */}
+          <div className="flex items-center gap-1.5">
+            {isSuperAdmin ? (
+              <div
+                className="flex items-center gap-1.5 text-xs text-amber-900 bg-amber-50 border border-amber-300 px-2.5 py-1.5 rounded-lg shadow-2xs"
+                title="Role aktif: Super Admin (Bisa tambah, edit, hapus produk & metode)"
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="font-extrabold text-amber-900">Super Admin</span>
+                <span className="hidden lg:inline text-[9.5px] bg-amber-200/80 text-amber-800 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                  Full Akses
+                </span>
+              </div>
+            ) : (
+              <div
+                className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-lg shadow-2xs"
+                title={`Role aktif: Kasir (${cashier.name}) - Hanya bisa melihat produk & metode`}
+              >
+                <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span className="font-bold text-slate-800">Kasir ({cashier.name})</span>
+                <span className="hidden lg:inline text-[9.5px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                  Lihat Saja
+                </span>
+              </div>
+            )}
+
+            {/* Quick Role Toggle button */}
+            <button
+              onClick={() => {
+                const nextRole = isSuperAdmin ? 'kasir' : 'super_admin';
+                switchRole(nextRole);
+              }}
+              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors flex items-center gap-1 text-[11px] font-medium"
+              title={isSuperAdmin ? 'Ganti ke akun Kasir' : 'Ganti ke akun Super Admin'}
+            >
+              <ArrowLeftRight className="w-3 h-3 text-slate-400" />
+              <span className="hidden xl:inline">Ganti ke {isSuperAdmin ? 'Kasir' : 'Super Admin'}</span>
+            </button>
           </div>
 
           {/* Realtime Clock */}

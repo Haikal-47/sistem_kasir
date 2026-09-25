@@ -15,12 +15,15 @@ import {
   Layers,
   ArrowUpDown,
   Printer,
-  Tag
+  Tag,
+  ShieldAlert,
+  Eye,
+  Lock
 } from 'lucide-react';
 import { PrintBarcodeModal } from '../components/PrintBarcodeModal';
 
 export const ProductsPage: React.FC = () => {
-  const { products, addProduct, updateProduct, deleteProduct } = usePOS();
+  const { products, addProduct, updateProduct, deleteProduct, isSuperAdmin, cashier } = usePOS();
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Semua');
@@ -54,6 +57,10 @@ export const ProductsPage: React.FC = () => {
   });
 
   const handleOpenAdd = () => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang diizinkan untuk menambah produk.');
+      return;
+    }
     setEditingProduct(null);
     setFormData({
       name: '',
@@ -69,6 +76,10 @@ export const ProductsPage: React.FC = () => {
   };
 
   const handleOpenEdit = (p: Product) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang diizinkan untuk mengedit produk.');
+      return;
+    }
     setEditingProduct(p);
     setFormData({
       name: p.name,
@@ -85,6 +96,10 @@ export const ProductsPage: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang dapat menyimpan perubahan produk.');
+      return;
+    }
     if (!formData.name.trim() || !formData.barcode.trim() || formData.price <= 0) {
       alert('Mohon isi nama produk, barcode, dan harga yang valid.');
       return;
@@ -132,13 +147,20 @@ export const ProductsPage: React.FC = () => {
             <span>Cetak Label Barcode</span>
           </button>
 
-          <button
-            onClick={handleOpenAdd}
-            className="py-2.5 px-4 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700 transition-colors shadow-sm flex items-center justify-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Tambah Produk Baru</span>
-          </button>
+          {isSuperAdmin ? (
+            <button
+              onClick={handleOpenAdd}
+              className="py-2.5 px-4 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700 transition-colors shadow-sm flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Tambah Produk Baru</span>
+            </button>
+          ) : (
+            <div className="py-2 px-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-2xs">
+              <Eye className="w-3.5 h-3.5 text-amber-600" />
+              <span>Mode Lihat Saja (Role: Kasir)</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -171,6 +193,16 @@ export const ProductsPage: React.FC = () => {
           </select>
         </div>
       </div>
+
+      {/* Role notice banner if Kasir (view only) */}
+      {!isSuperAdmin && (
+        <div className="mx-3 md:mx-6 mt-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 text-xs text-amber-900 shadow-2xs">
+          <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+          <div className="flex-1">
+            <strong>Peran: Kasir ({cashier.name}) — Mode Lihat Saja:</strong> Anda hanya dapat melihat katalog dan stok produk. Tambah, edit, dan hapus produk dibatasi khusus untuk <strong>Super Admin</strong>.
+          </div>
+        </div>
+      )}
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto p-3 md:p-6">
@@ -207,34 +239,43 @@ export const ProductsPage: React.FC = () => {
                     </div>
                   </div>
                   <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
-                    {/* Quick stock adjust */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-500">Stok:</span>
-                      <div className="inline-flex rounded-lg border border-slate-200 bg-white shadow-2xs">
-                        <button onClick={() => updateProduct(product.id, { stock: Math.max(0, product.stock - 1) })}
-                          className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded-l-lg text-slate-700 font-bold">
-                          -
-                        </button>
-                        <span className="w-8 h-8 flex items-center justify-center text-xs font-bold font-mono text-slate-900">{product.stock}</span>
-                        <button onClick={() => updateProduct(product.id, { stock: product.stock + 1 })}
-                          className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded-r-lg text-slate-700 font-bold">
-                          +
-                        </button>
+                    {/* Quick stock adjust - only Super Admin */}
+                    {isSuperAdmin ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">Stok:</span>
+                        <div className="inline-flex rounded-lg border border-slate-200 bg-white shadow-2xs">
+                          <button onClick={() => updateProduct(product.id, { stock: Math.max(0, product.stock - 1) })}
+                            className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded-l-lg text-slate-700 font-bold">
+                            -
+                          </button>
+                          <span className="w-8 h-8 flex items-center justify-center text-xs font-bold font-mono text-slate-900">{product.stock}</span>
+                          <button onClick={() => updateProduct(product.id, { stock: product.stock + 1 })}
+                            className="w-8 h-8 flex items-center justify-center hover:bg-slate-100 rounded-r-lg text-slate-700 font-bold">
+                            +
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <span className="text-xs text-slate-500">Satuan: <strong>{product.unit}</strong></span>
+                    )}
+
                     <div className="flex items-center gap-1">
                       <button onClick={() => { setProductForPrint(product); setIsPrintModalOpen(true); }}
                         className="p-2 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors" title="Cetak Barcode">
                         <Printer className="w-4 h-4" />
                       </button>
-                      <button onClick={() => handleOpenEdit(product)}
-                        className="p-2 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors" title="Edit">
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => { if (confirm(`Hapus produk "${product.name}"?`)) deleteProduct(product.id); }}
-                        className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Hapus">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {isSuperAdmin && (
+                        <>
+                          <button onClick={() => handleOpenEdit(product)}
+                            className="p-2 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors" title="Edit">
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => { if (confirm(`Hapus produk "${product.name}"?`)) deleteProduct(product.id); }}
+                            className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Hapus">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -308,23 +349,25 @@ export const ProductsPage: React.FC = () => {
                           {product.stock} {product.unit}
                         </span>
 
-                        {/* Quick stock +/- */}
-                        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
-                          <button
-                            onClick={() => updateProduct(product.id, { stock: Math.max(0, product.stock - 1) })}
-                            className="w-5 h-5 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 text-xs font-bold"
-                            title="Kurangi stok 1"
-                          >
-                            -
-                          </button>
-                          <button
-                            onClick={() => updateProduct(product.id, { stock: product.stock + 1 })}
-                            className="w-5 h-5 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 text-xs font-bold"
-                            title="Tambah stok 1"
-                          >
-                            +
-                          </button>
-                        </div>
+                        {/* Quick stock +/- only for Super Admin */}
+                        {isSuperAdmin && (
+                          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
+                            <button
+                              onClick={() => updateProduct(product.id, { stock: Math.max(0, product.stock - 1) })}
+                              className="w-5 h-5 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 text-xs font-bold"
+                              title="Kurangi stok 1"
+                            >
+                              -
+                            </button>
+                            <button
+                              onClick={() => updateProduct(product.id, { stock: product.stock + 1 })}
+                              className="w-5 h-5 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 text-xs font-bold"
+                              title="Tambah stok 1"
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -341,24 +384,28 @@ export const ProductsPage: React.FC = () => {
                         >
                           <Printer className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => handleOpenEdit(product)}
-                          className="p-1.5 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
-                          title="Edit Produk"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Yakin ingin menghapus produk "${product.name}"?`)) {
-                              deleteProduct(product.id);
-                            }
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="Hapus Produk"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {isSuperAdmin && (
+                          <>
+                            <button
+                              onClick={() => handleOpenEdit(product)}
+                              className="p-1.5 text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
+                              title="Edit Produk"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`Yakin ingin menghapus produk "${product.name}"?`)) {
+                                  deleteProduct(product.id);
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="Hapus Produk"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

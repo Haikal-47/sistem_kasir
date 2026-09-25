@@ -19,7 +19,10 @@ import {
   FileText,
   ShieldCheck,
   Layers,
-  Copy
+  Copy,
+  ShieldAlert,
+  Eye,
+  Lock
 } from 'lucide-react';
 
 const COLOR_OPTIONS = [
@@ -50,7 +53,7 @@ const getColorClasses = (color: string) => {
 const ICON_OPTIONS = ['💵', '🏦', '📱', '💳', '🔑', '🪙', '💰', '🎫', '🛒', '⚡'];
 
 export const PaymentMethodsPage: React.FC = () => {
-  const { paymentMethods, addPaymentMethod, updatePaymentMethod, deletePaymentMethod } = usePOS();
+  const { paymentMethods, addPaymentMethod, updatePaymentMethod, deletePaymentMethod, isSuperAdmin, cashier } = usePOS();
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterType, setFilterType] = useState<'ALL' | 'ACTIVE' | 'INACTIVE' | 'TUNAI' | 'TRANSFER'>('ALL');
@@ -98,6 +101,10 @@ export const PaymentMethodsPage: React.FC = () => {
   });
 
   const handleOpenAdd = () => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang diizinkan untuk menambah metode pembayaran.');
+      return;
+    }
     setEditingMethod(null);
     setFormName('');
     setFormBankName('');
@@ -113,6 +120,10 @@ export const PaymentMethodsPage: React.FC = () => {
   };
 
   const handleOpenEdit = (m: PaymentMethodConfig) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang diizinkan untuk mengedit metode pembayaran.');
+      return;
+    }
     setEditingMethod(m);
     setFormName(m.name);
     setFormBankName(m.bankName || '');
@@ -128,6 +139,10 @@ export const PaymentMethodsPage: React.FC = () => {
   };
 
   const handleDelete = (m: PaymentMethodConfig) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang diizinkan untuk menghapus metode pembayaran.');
+      return;
+    }
     if (m.isDefault) {
       alert('Metode Tunai adalah metode bawaan sistem dan tidak dapat dihapus.');
       return;
@@ -138,6 +153,10 @@ export const PaymentMethodsPage: React.FC = () => {
   };
 
   const handleToggleActive = (m: PaymentMethodConfig) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang diizinkan mengubah status aktif metode.');
+      return;
+    }
     updatePaymentMethod(m.id, { isActive: !m.isActive });
   };
 
@@ -149,6 +168,10 @@ export const PaymentMethodsPage: React.FC = () => {
 
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya Super Admin yang diizinkan menyimpan perubahan metode pembayaran.');
+      return;
+    }
     const cleanName = formName.trim();
     if (!cleanName) {
       setErrorMessage('Nama metode pembayaran wajib diisi.');
@@ -215,14 +238,31 @@ export const PaymentMethodsPage: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md shadow-brand-600/25 transition-all active:scale-[0.98]"
-        >
-          <Plus className="w-4 h-4" />
-          <span>+ Tambah Metode Baru</span>
-        </button>
+        {isSuperAdmin ? (
+          <button
+            onClick={handleOpenAdd}
+            className="flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md shadow-brand-600/25 transition-all active:scale-[0.98]"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Tambah Metode Baru</span>
+          </button>
+        ) : (
+          <div className="py-2 px-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-2xs">
+            <Eye className="w-3.5 h-3.5 text-amber-600" />
+            <span>Mode Lihat Saja (Role: Kasir)</span>
+          </div>
+        )}
       </div>
+
+      {/* Role notice banner if Kasir (view only) */}
+      {!isSuperAdmin && (
+        <div className="mx-6 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 text-xs text-amber-900 shadow-2xs">
+          <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+          <div className="flex-1">
+            <strong>Peran: Kasir ({cashier.name}) — Mode Lihat Saja:</strong> Anda hanya dapat melihat konfigurasi metode pembayaran kasir. Tambah, edit, dan hapus metode pembayaran dibatasi khusus untuk <strong>Super Admin</strong>.
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="p-6 pb-2 grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
@@ -417,53 +457,79 @@ export const PaymentMethodsPage: React.FC = () => {
 
                         {/* Status Toggle */}
                         <td className="py-3.5 px-4 text-center">
-                          <button
-                            onClick={() => handleToggleActive(method)}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                              method.isActive
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 shadow-2xs'
-                                : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200'
-                            }`}
-                            title={method.isActive ? 'Metode aktif di kasir. Klik untuk menonaktifkan' : 'Metode nonaktif. Klik untuk mengaktifkan'}
-                          >
-                            {method.isActive ? (
-                              <>
-                                <ToggleRight className="w-4 h-4 text-emerald-600" />
-                                <span>Aktif</span>
-                              </>
-                            ) : (
-                              <>
-                                <ToggleLeft className="w-4 h-4 text-slate-400" />
-                                <span>Nonaktif</span>
-                              </>
-                            )}
-                          </button>
+                          {isSuperAdmin ? (
+                            <button
+                              onClick={() => handleToggleActive(method)}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                                method.isActive
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 shadow-2xs'
+                                  : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-slate-200'
+                              }`}
+                              title={method.isActive ? 'Metode aktif di kasir. Klik untuk menonaktifkan' : 'Metode nonaktif. Klik untuk mengaktifkan'}
+                            >
+                              {method.isActive ? (
+                                <>
+                                  <ToggleRight className="w-4 h-4 text-emerald-600" />
+                                  <span>Aktif</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ToggleLeft className="w-4 h-4 text-slate-400" />
+                                  <span>Nonaktif</span>
+                                </>
+                              )}
+                            </button>
+                          ) : (
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                                method.isActive
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-300'
+                                  : 'bg-slate-100 text-slate-400 border border-slate-200'
+                              }`}
+                            >
+                              {method.isActive ? (
+                                <>
+                                  <ToggleRight className="w-4 h-4 text-emerald-600" />
+                                  <span>Aktif</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ToggleLeft className="w-4 h-4 text-slate-400" />
+                                  <span>Nonaktif</span>
+                                </>
+                              )}
+                            </span>
+                          )}
                         </td>
 
                         {/* Actions */}
                         <td className="py-3.5 px-5 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenEdit(method)}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 hover:bg-brand-50 border border-transparent hover:border-brand-200 transition-colors"
-                              title="Edit Metode"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
+                          {isSuperAdmin ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenEdit(method)}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 hover:bg-brand-50 border border-transparent hover:border-brand-200 transition-colors"
+                                title="Edit Metode"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
 
-                            <button
-                              onClick={() => handleDelete(method)}
-                              disabled={method.isDefault}
-                              className={`p-1.5 rounded-lg transition-colors ${
-                                method.isDefault
-                                  ? 'text-slate-200 cursor-not-allowed'
-                                  : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200'
-                              }`}
-                              title={method.isDefault ? 'Metode Tunai bawaan tidak dapat dihapus' : 'Hapus Metode'}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                              <button
+                                onClick={() => handleDelete(method)}
+                                disabled={method.isDefault}
+                                className={`p-1.5 rounded-lg transition-colors ${
+                                  method.isDefault
+                                    ? 'text-slate-200 cursor-not-allowed'
+                                    : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200'
+                                }`}
+                                title={method.isDefault ? 'Metode Tunai bawaan tidak dapat dihapus' : 'Hapus Metode'}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-xs italic">Lihat Saja</span>
+                          )}
                         </td>
 
                       </tr>

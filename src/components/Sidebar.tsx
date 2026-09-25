@@ -8,7 +8,8 @@ import {
   UserCircle2, 
   Store,
   LogOut,
-  CreditCard
+  CreditCard,
+  Crown
 } from 'lucide-react';
 import { ArfaLogo } from './ArfaLogo';
 
@@ -17,7 +18,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
-  const { activeTab, setActiveTab, pendingConfirmations, cashier } = usePOS();
+  const { activeTab, setActiveTab, pendingConfirmations, cashier, isSuperAdmin } = usePOS();
 
   const navItems = [
     {
@@ -107,12 +108,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
         {/* Cashier & Logout */}
         <div className="flex flex-col items-center gap-2 w-full px-2 border-t border-slate-800 pt-3">
 
-          <div className="flex flex-col items-center text-center group cursor-pointer" title={`Kasir: ${cashier.name}\n${cashier.shift}`}>
-            <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-brand-400 group-hover:border-brand-500 transition-colors">
-              <UserCircle2 className="w-6 h-6" />
+          <div
+            className="flex flex-col items-center text-center group cursor-pointer"
+            title={`Role: ${isSuperAdmin ? 'Super Admin' : 'Kasir'}\nNama: ${cashier.name}\n${cashier.shift}`}
+          >
+            <div className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${
+              isSuperAdmin
+                ? 'bg-amber-950/40 border-amber-500/50 text-amber-400 group-hover:border-amber-400'
+                : 'bg-slate-800 border-slate-700 text-brand-400 group-hover:border-brand-500'
+            }`}>
+              {isSuperAdmin ? <Crown className="w-4 h-4" /> : <UserCircle2 className="w-5 h-5" />}
             </div>
-            <span className="text-[10px] text-slate-400 font-medium truncate max-w-[64px] mt-1">
-              {cashier.name.split(' ')[0]}
+            <span className="text-[10px] text-slate-300 font-bold truncate max-w-[68px] mt-1 leading-none">
+              {isSuperAdmin ? 'Super Admin' : cashier.name}
+            </span>
+            <span className="text-[8.5px] text-slate-500 uppercase tracking-tighter mt-0.5 leading-none">
+              {isSuperAdmin ? 'Admin' : 'Kasir'}
             </span>
           </div>
 
