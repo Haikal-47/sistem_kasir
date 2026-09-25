@@ -6,7 +6,6 @@ import {
   Package, 
   Receipt, 
   UserCircle2, 
-  RotateCcw,
   Store,
   LogOut,
   CreditCard
@@ -18,7 +17,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
-  const { activeTab, setActiveTab, pendingConfirmations, cashier, resetToDemoData } = usePOS();
+  const { activeTab, setActiveTab, pendingConfirmations, cashier } = usePOS();
 
   const navItems = [
     {
@@ -105,20 +104,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
           })}
         </nav>
 
-        {/* Cashier, Reset & Logout */}
+        {/* Cashier & Logout */}
         <div className="flex flex-col items-center gap-2 w-full px-2 border-t border-slate-800 pt-3">
-          <button
-            onClick={() => {
-              if (confirm('Muat ulang data demo produk dan riwayat bawaan?')) {
-                resetToDemoData();
-              }
-            }}
-            title="Reset Data Demo"
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors text-xs flex flex-col items-center"
-          >
-            <RotateCcw className="w-4 h-4 mb-0.5" />
-            <span className="text-[9px]">Reset</span>
-          </button>
 
           <div className="flex flex-col items-center text-center group cursor-pointer" title={`Kasir: ${cashier.name}\n${cashier.shift}`}>
             <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-brand-400 group-hover:border-brand-500 transition-colors">
