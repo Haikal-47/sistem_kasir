@@ -12,6 +12,7 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { PaymentMethodsModal } from './components/PaymentMethodsModal';
 import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
+import { ProfileModal } from './components/ProfileModal';
 
 export const App: React.FC = () => {
   const { activeTab, setActiveTab, isPaymentMethodsOpen, setIsPaymentMethodsOpen } = usePOS();
@@ -107,6 +108,7 @@ export const App: React.FC = () => {
         isOpen={isPaymentMethodsOpen}
         onClose={() => setIsPaymentMethodsOpen(false)}
       />
+      <ProfileModal />
     </div>
   );
 };

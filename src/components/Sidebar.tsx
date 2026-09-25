@@ -18,7 +18,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
-  const { activeTab, setActiveTab, pendingConfirmations, cashier, isSuperAdmin } = usePOS();
+  const { activeTab, setActiveTab, pendingConfirmations, cashier, isSuperAdmin, setIsProfileModalOpen } = usePOS();
 
   const navItems = [
     {
@@ -108,9 +108,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
         {/* Cashier & Logout */}
         <div className="flex flex-col items-center gap-2 w-full px-2 border-t border-slate-800 pt-3">
 
-          <div
-            className="flex flex-col items-center text-center group cursor-pointer"
-            title={`Role: ${isSuperAdmin ? 'Super Admin' : 'Kasir'}\nNama: ${cashier.name}\n${cashier.shift}`}
+          <button
+            onClick={() => setIsProfileModalOpen(true)}
+            className="flex flex-col items-center text-center group cursor-pointer w-full p-1.5 rounded-xl hover:bg-slate-800 transition-colors"
+            title={`Role: ${isSuperAdmin ? 'Super Admin' : 'Kasir'}\nNama: ${cashier.name}\n${cashier.shift}\nKlik untuk kelola kata sandi & profil`}
           >
             <div className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${
               isSuperAdmin
@@ -125,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
             <span className="text-[8.5px] text-slate-500 uppercase tracking-tighter mt-0.5 leading-none">
               {isSuperAdmin ? 'Admin' : 'Kasir'}
             </span>
-          </div>
+          </button>
 
           {/* Logout button */}
           <button

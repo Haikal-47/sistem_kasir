@@ -61,6 +61,13 @@ interface POSContextType {
   isSuperAdmin: boolean;
   switchRole: (role: UserRole) => void;
   
+  // Profile & Password Management
+  isProfileModalOpen: boolean;
+  setIsProfileModalOpen: (open: boolean) => void;
+  changePassword: (role: UserRole, oldPass: string, newPass: string) => { success: boolean; message: string };
+  verifyPassword: (role: UserRole, pass: string) => boolean;
+  getRolePassword: (role: UserRole) => string;
+  
   // Audio & Notification
   playBeep: () => void;
   resetToDemoData: () => void;
@@ -613,8 +620,58 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return transactions.filter(tx => tx.status === 'MENUNGGU_KONFIRMASI');
   }, [transactions]);
 
+  // Profile modal and password handling
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+
+  const getRolePassword = (role: UserRole): string => {
+    const key = role === 'super_admin' ? 'pos_admin_pin' : 'pos_kasir_pin';
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      try {
+        return atob(saved);
+      } catch {
+        return saved;
+      }
+    }
+    // Fallback to legacy pos_pin
+    const legacy = localStorage.getItem('pos_pin');
+    if (legacy) {
+      try {
+        return atob(legacy);
+      } catch {
+        return legacy;
+      }
+    }
+    return '123456';
+  };
+
+  const verifyPassword = (role: UserRole, pass: string): boolean => {
+    return pass === getRolePassword(role);
+  };
+
+  const changePassword = (role: UserRole, oldPass: string, newPass: string): { success: boolean; message: string } => {
+    const current = getRolePassword(role);
+    if (oldPass !== current) {
+      return { success: false, message: 'Kata sandi saat ini tidak cocok.' };
+    }
+    if (!newPass || newPass.trim().length < 4) {
+      return { success: false, message: 'Kata sandi baru minimal 4 karakter.' };
+    }
+    const key = role === 'super_admin' ? 'pos_admin_pin' : 'pos_kasir_pin';
+    localStorage.setItem(key, btoa(newPass.trim()));
+    // Also sync pos_pin if super_admin for backwards compatibility
+    if (role === 'super_admin') {
+      localStorage.setItem('pos_pin', btoa(newPass.trim()));
+    }
+    return { success: true, message: 'Kata sandi berhasil diperbarui!' };
+  };
+
   const updateCashier = (updates: Partial<CashierProfile>) => {
-    setCashier(prev => ({ ...prev, ...updates }));
+    setCashier(prev => {
+      const updated = { ...prev, ...updates };
+      localStorage.setItem('pos_cashier', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const resetToDemoData = () => {
@@ -676,6 +733,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateCashier,
         isSuperAdmin,
         switchRole,
+        isProfileModalOpen,
+        setIsProfileModalOpen,
+        changePassword,
+        verifyPassword,
+        getRolePassword,
         playBeep,
         resetToDemoData,
       }}

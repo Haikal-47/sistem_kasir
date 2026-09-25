@@ -42,7 +42,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   };
 
   const getStoredPin = (): string => {
-    return localStorage.getItem('pos_pin') || DEFAULT_PIN_B64;
+    if (selectedRole === 'super_admin') {
+      return localStorage.getItem('pos_admin_pin') || localStorage.getItem('pos_pin') || DEFAULT_PIN_B64;
+    }
+    return localStorage.getItem('pos_kasir_pin') || localStorage.getItem('pos_pin') || DEFAULT_PIN_B64;
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -77,7 +80,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         onLoginSuccess();
       } else {
         setIsShaking(true);
-        setError('PIN salah. Coba lagi. (Default: 123456)');
+        setError('Kata sandi / PIN salah. Coba lagi. (Default: 123456)');
         setPin('');
         setIsLoading(false);
         pinRef.current?.focus();
@@ -218,7 +221,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           {/* PIN Field */}
           <div>
             <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
-              PIN Keamanan
+              Kata Sandi / PIN
             </label>
             <div className="relative">
               <KeyRound className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -227,12 +230,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 type={showPin ? 'text' : 'password'}
                 value={pin}
                 onChange={(e) => {
-                  setPin(e.target.value.replace(/\D/g, '').slice(0, 8));
+                  setPin(e.target.value);
                   setError('');
                 }}
                 onKeyDown={handlePinKeyDown}
                 placeholder="••••••"
-                inputMode="numeric"
                 className="w-full pl-10 pr-12 py-3 bg-slate-800 border border-slate-700 focus:border-brand-500 focus:bg-slate-800/80 rounded-xl text-white text-sm font-mono tracking-widest outline-none transition-all placeholder:text-slate-500 placeholder:tracking-normal"
                 autoComplete="current-password"
               />
@@ -246,7 +248,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </button>
             </div>
             <p className="text-[11px] text-slate-500 mt-1.5 ml-1">
-              PIN default: <span className="font-mono text-slate-400">123456</span>
+              Kata sandi / PIN default: <span className="font-mono text-slate-400">123456</span>
             </p>
           </div>
 
