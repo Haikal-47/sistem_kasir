@@ -145,12 +145,15 @@ export const initDatabase = async () => {
     if (parseInt(cashierCheck.rows[0].count, 10) === 0) {
       await client.query(`
         INSERT INTO cashier_profile (id, name, shift, outlet_name, outlet_address, outlet_phone)
-        VALUES ('CSH-001', 'Budi Pratama', 'Shift 1 (07:00 - 15:00)', 'ARFA FASHION', 'Jl. Merdeka Raya No. 45, Jakarta Pusat', '021-5550192');
+        VALUES ('CSH-001', 'Gusti', 'Shift 1 (07:00 - 15:00)', 'ARFA FASHION', 'Jl. Merdeka Raya No. 45, Jakarta Pusat', '021-5550192');
       `);
       console.log('✅ Profil kasir awal berhasil di-seed');
     } else {
       await client.query(`
         UPDATE cashier_profile SET outlet_name = 'ARFA FASHION' WHERE outlet_name = 'MINIMARKET KASIR PRO';
+        UPDATE cashier_profile SET name = 'Gusti' WHERE name = 'Budi Pratama';
+        UPDATE transactions SET cashier_name = 'Gusti' WHERE cashier_name = 'Budi Pratama';
+        UPDATE transactions SET transfer_confirmed_by = 'Gusti' WHERE transfer_confirmed_by = 'Budi Pratama';
       `);
     }
 
@@ -213,7 +216,7 @@ export const initDatabase = async () => {
         INSERT INTO transactions (
           id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total, payment_method, status, cash_given, change_amount
         ) VALUES (
-          'TRX-101', 'INV/20260919/0001', '2026-09-19T08:32:15', 'Budi Pratama',
+          'TRX-101', 'INV/20260919/0001', '2026-09-19T08:32:15', 'Gusti',
           '[{"productId":"PRD-001","name":"Atasan Stripe Polo Kerah Jeans","brand":"BY.ELFARA","price":145000,"quantity":2,"subtotal":290000},{"productId":"PRD-013","name":"Pashmina Ceruty Baby Doll 180x75","brand":"ZAHRA HIJAB","price":35000,"quantity":2,"subtotal":70000}]'::jsonb,
           360000, 0, 0, 360000, 'TUNAI', 'LUNAS', 400000, 40000
         );
@@ -223,9 +226,9 @@ export const initDatabase = async () => {
         INSERT INTO transactions (
           id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total, payment_method, status, transfer_bank, transfer_proof_url, transfer_proof_verified, transfer_confirmed_at, transfer_confirmed_by
         ) VALUES (
-          'TRX-102', 'INV/20260919/0002', '2026-09-19T09:14:40', 'Budi Pratama',
+          'TRX-102', 'INV/20260919/0002', '2026-09-19T09:14:40', 'Gusti',
           '[{"productId":"PRD-003","name":"Cardigan Stripe Kerah Jeans","brand":"BY.ELFARA","price":146000,"quantity":2,"subtotal":292000},{"productId":"PRD-009","name":"Kulot Highwaist Linen Premium","brand":"ARFA FASHION","price":95000,"quantity":1,"subtotal":95000}]'::jsonb,
-          387000, 0, 0, 387000, 'TRANSFER', 'LUNAS', 'BCA (Virtual Account)', 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&q=80', true, '2026-09-19T09:16:00', 'Budi Pratama'
+          387000, 0, 0, 387000, 'TRANSFER', 'LUNAS', 'BCA (Virtual Account)', 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&q=80', true, '2026-09-19T09:16:00', 'Gusti'
         );
       `);
 
@@ -233,7 +236,7 @@ export const initDatabase = async () => {
         INSERT INTO transactions (
           id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total, payment_method, status, transfer_bank, transfer_proof_url, transfer_proof_verified, customer_note
         ) VALUES (
-          'TRX-103', 'INV/20260919/0003', '2026-09-19T10:05:22', 'Budi Pratama',
+          'TRX-103', 'INV/20260919/0003', '2026-09-19T10:05:22', 'Gusti',
           '[{"productId":"PRD-007","name":"Gamis Crinkle Airflow Premium","brand":"ARFA FASHION","price":175000,"quantity":1,"subtotal":175000},{"productId":"PRD-014","name":"Hijab Segi Empat Voal Miracle Laser Cut","brand":"ZAHRA HIJAB","price":38000,"quantity":2,"subtotal":76000}]'::jsonb,
           251000, 0, 0, 251000, 'TRANSFER', 'MENUNGGU_KONFIRMASI', 'Mandiri Livin', 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=400&q=80', false, 'Pesanan Online / Reguler'
         );

@@ -13,13 +13,16 @@ interface LoginPageProps {
 const DEFAULT_PIN_B64 = btoa('123456');
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const { cashier, switchRole } = usePOS();
+  const { cashier, switchRole, updateCashier } = usePOS();
 
   const [selectedRole, setSelectedRole] = useState<UserRole>(() => {
     return cashier.role || 'kasir';
   });
   const [name, setName] = useState<string>(() => {
-    return cashier.name || 'Budi Pratama';
+    if (cashier.name && cashier.name !== 'Budi Pratama') {
+      return cashier.name;
+    }
+    return 'Gusti';
   });
   const [pin, setPin] = useState<string>('123456');
   const [showPin, setShowPin] = useState<boolean>(false);
@@ -35,7 +38,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     if (role === 'super_admin') {
       setName('Super Admin');
     } else {
-      setName('Budi Pratama');
+      setName(cashier.name && cashier.name !== 'Budi Pratama' ? cashier.name : 'Gusti');
     }
     setError('');
     pinRef.current?.focus();
@@ -72,6 +75,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       if (inputPinB64 === storedPin) {
         // Apply chosen role
         switchRole(selectedRole);
+
+        // Update cashier profile name
+        if (name.trim()) {
+          updateCashier({ name: name.trim() });
+        }
 
         // Save login session
         sessionStorage.setItem('pos_logged_in', 'true');

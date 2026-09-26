@@ -275,9 +275,9 @@ router.get('/cashier', async (req, res) => {
     const result = await pool.query('SELECT * FROM cashier_profile LIMIT 1');
     if (result.rows.length === 0) {
       return res.json({
-        name: 'Budi Pratama',
+        name: 'Gusti',
         shift: 'Shift 1 (07:00 - 15:00)',
-        outletName: 'MINIMARKET KASIR PRO',
+        outletName: 'ARFA FASHION',
         outletAddress: 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
         outletPhone: '021-5550192',
       });

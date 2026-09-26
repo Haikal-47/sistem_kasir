@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { usePOS } from '../context/POSContext';
+import { Product } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { MobilePairingModal } from '../components/MobilePairingModal';
 import {
@@ -19,6 +20,9 @@ import {
   Smartphone,
   CreditCard,
   ScanLine,
+  Palette,
+  Ruler,
+  X,
 } from 'lucide-react';
 
 // ─── HID Scanner Config ────────────────────────────────────────────────────────
@@ -26,6 +30,17 @@ import {
 // karakter). Ketikan manusia normal membutuhkan >100ms per karakter.
 const SCANNER_MAX_INTERVAL_MS = 50;
 const SCANNER_MIN_LENGTH = 3; // Abaikan buffer terlalu pendek (noise)
+
+// ─── Color name → HEX map (untuk dot preview) ─────────────────────────────────
+const COLOR_HEX_MAP: Record<string, string> = {
+  'hitam': '#1a1a1a', 'putih': '#f5f5f5', 'navy': '#1e3a5f', 'abu-abu': '#9e9e9e',
+  'cream': '#f5f0e8', 'dusty pink': '#e8b4b8', 'maroon': '#800020', 'olive': '#6b7c3d',
+  'sage green': '#87a878', 'dusty blue': '#7ba5c4', 'lavender': '#c8b4e0',
+  'coklat': '#7d5a3c', 'coklat muda': '#c8956c', 'camel': '#c19a6b', 'grey': '#9e9e9e',
+  'light blue': '#aed6f1', 'dark blue': '#1a3a5c', 'black denim': '#2c2c3e',
+  'biru bunga': '#6fa8d6', 'pink bunga': '#e8a0b4', 'hijau bunga': '#88c9a1',
+  'sage': '#87a878', 'dusty lilac': '#b098c4', 'nude': '#e8c9a8',
+};
 
 export const TransactionPage: React.FC = () => {
   const { 
@@ -57,6 +72,13 @@ export const TransactionPage: React.FC = () => {
   const [showDiscountModal, setShowDiscountModal] = useState<boolean>(false);
   // Mobile-only: toggle between products view and cart drawer
   const [mobileShowCart, setMobileShowCart] = useState<boolean>(false);
+
+  // ─── Variant Picker (color / size) ─────────────────────────────────────────
+  const [variantPicker, setVariantPicker] = useState<{
+    product: Product;
+    selectedColor?: string;
+    selectedSize?: string;
+  } | null>(null);
 
   // ─── HID Scanner Refs ──────────────────────────────────────────────────────
   // Menggunakan ref (bukan state) agar tidak trigger re-render saat scanner aktif
@@ -420,14 +442,32 @@ export const TransactionPage: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {filteredProducts.map((product) => {
-              const inCartItem = cart.find(c => c.product.id === product.id);
+              const inCartItem = cart.find(c =>
+                c.product.id === product.id &&
+                (!c.selectedColor || !variantPicker) &&
+                (!c.selectedSize || !variantPicker)
+              );
+              const hasVariants = (product.colors && product.colors.length > 0) || (product.sizes && product.sizes.length > 0);
               const isOutOfStock = product.stock <= 0;
               const isLowStock = product.stock > 0 && product.stock <= 5;
+
+              const handleProductClick = () => {
+                if (isOutOfStock) return;
+                if (hasVariants) {
+                  setVariantPicker({
+                    product,
+                    selectedColor: product.colors?.[0],
+                    selectedSize: product.sizes?.[0],
+                  });
+                } else {
+                  addToCart(product, 1);
+                }
+              };
 
               return (
                 <div
                   key={product.id}
-                  onClick={() => !isOutOfStock && addToCart(product, 1)}
+                  onClick={handleProductClick}
                   className={`relative group bg-white rounded-2xl p-3.5 border transition-all flex flex-col justify-between select-none ${
                     isOutOfStock
                       ? 'opacity-60 border-slate-200 cursor-not-allowed bg-slate-50'
@@ -465,13 +505,48 @@ export const TransactionPage: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Color & Size mini preview */}
+                  {hasVariants && (
+                    <div className="flex flex-wrap gap-1.5 my-1">
+                      {product.colors && product.colors.length > 0 && (
+                        <div className="flex items-center gap-0.5">
+                          {product.colors.slice(0, 5).map(c => (
+                            <span
+                              key={c}
+                              title={c}
+                              className="w-3 h-3 rounded-full border border-white shadow-sm"
+                              style={{ backgroundColor: COLOR_HEX_MAP[c.toLowerCase()] || '#d1d5db' }}
+                            />
+                          ))}
+                          {product.colors.length > 5 && (
+                            <span className="text-[8px] text-slate-400 font-bold">+{product.colors.length - 5}</span>
+                          )}
+                        </div>
+                      )}
+                      {product.sizes && product.sizes.length > 0 && (
+                        <div className="flex items-center gap-0.5 flex-wrap">
+                          {product.sizes.slice(0, 4).map(s => (
+                            <span key={s} className="text-[8px] px-1 py-0.5 rounded bg-slate-100 text-slate-600 font-bold">{s}</span>
+                          ))}
+                          {product.sizes.length > 4 && (
+                            <span className="text-[8px] text-slate-400">+{product.sizes.length - 4}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Price and Cart Indicator */}
-                  <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
                     <span className="font-extrabold text-sm text-slate-900 font-mono">
                       {formatRupiah(product.price)}
                     </span>
 
-                    {inCartItem ? (
+                    {hasVariants ? (
+                      <div className="w-6 h-6 rounded-lg bg-brand-50 text-brand-600 group-hover:bg-brand-100 flex items-center justify-center transition-colors" title="Pilih varian">
+                        <Plus className="w-3.5 h-3.5" />
+                      </div>
+                    ) : inCartItem ? (
                       <div className="w-6 h-6 rounded-lg bg-brand-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
                         {inCartItem.quantity}
                       </div>
@@ -574,20 +649,38 @@ export const TransactionPage: React.FC = () => {
               </p>
             </div>
           ) : (
-            cart.map((item) => (
-              <div key={item.product.id} className="py-3 flex flex-col gap-2 group">
+            cart.map((item) => {
+              const cartKey = `${item.product.id}|${item.selectedColor || ''}|${item.selectedSize || ''}`;
+              return (
+              <div key={cartKey} className="py-3 flex flex-col gap-2 group">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <h4 className="font-bold text-xs text-slate-800 leading-tight truncate">
                       {item.product.name}
                     </h4>
+                    {/* Variant badges */}
+                    {(item.selectedColor || item.selectedSize) && (
+                      <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                        {item.selectedColor && (
+                          <span className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold border border-slate-200">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLOR_HEX_MAP[item.selectedColor.toLowerCase()] || '#d1d5db' }} />
+                            {item.selectedColor}
+                          </span>
+                        )}
+                        {item.selectedSize && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 font-bold border border-brand-200">
+                            {item.selectedSize}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <span className="text-[10px] text-slate-500 font-mono">
                       {formatRupiah(item.product.price)}
                     </span>
                   </div>
 
                   <button
-                    onClick={() => removeFromCart(item.product.id)}
+                    onClick={() => removeFromCart(cartKey)}
                     className="text-slate-300 hover:text-rose-600 p-1 opacity-60 group-hover:opacity-100 transition-opacity"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -598,7 +691,7 @@ export const TransactionPage: React.FC = () => {
                   {/* Qty Controls */}
                   <div className="flex items-center gap-1.5 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
                     <button
-                      onClick={() => updateCartItemQty(item.product.id, item.quantity - 1)}
+                      onClick={() => updateCartItemQty(cartKey, item.quantity - 1)}
                       className="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-200 flex items-center justify-center shadow-2xs"
                     >
                       <Minus className="w-3 h-3" />
@@ -607,7 +700,7 @@ export const TransactionPage: React.FC = () => {
                       {item.quantity}
                     </span>
                     <button
-                      onClick={() => updateCartItemQty(item.product.id, item.quantity + 1)}
+                      onClick={() => updateCartItemQty(cartKey, item.quantity + 1)}
                       disabled={item.quantity >= item.product.stock}
                       className="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-200 flex items-center justify-center shadow-2xs disabled:opacity-40"
                     >
@@ -621,7 +714,8 @@ export const TransactionPage: React.FC = () => {
                   </span>
                 </div>
               </div>
-            ))
+            );
+            })
           )}
         </div>
 
@@ -773,6 +867,113 @@ export const TransactionPage: React.FC = () => {
           window.location.reload();
         }}
       />
+      {/* Variant Picker Modal — muncul ketika produk punya warna/ukuran */}
+      {variantPicker && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-4 animate-in fade-in duration-150"
+          onClick={() => setVariantPicker(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in slide-in-from-bottom-4 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 pt-5 pb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm leading-tight line-clamp-2">
+                  {variantPicker.product.name}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">{variantPicker.product.brand} · {formatRupiah(variantPicker.product.price)}</p>
+              </div>
+              <button onClick={() => setVariantPicker(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-5 pb-5 space-y-4">
+              {/* Color picker */}
+              {variantPicker.product.colors && variantPicker.product.colors.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Palette className="w-3 h-3" /> Pilih Warna
+                    {variantPicker.selectedColor && (
+                      <span className="normal-case font-semibold text-slate-700 ml-1">— {variantPicker.selectedColor}</span>
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {variantPicker.product.colors.map(c => {
+                      const isSelected = variantPicker.selectedColor === c;
+                      return (
+                        <button
+                          key={c}
+                          onClick={() => setVariantPicker(prev => prev ? { ...prev, selectedColor: c } : null)}
+                          title={c}
+                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                            isSelected
+                              ? 'border-brand-500 bg-brand-50 text-brand-800 ring-1 ring-brand-400 shadow-sm'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span
+                            className="w-3 h-3 rounded-full shrink-0 border border-white shadow-sm"
+                            style={{ backgroundColor: COLOR_HEX_MAP[c.toLowerCase()] || '#d1d5db' }}
+                          />
+                          {c}
+                          {isSelected && <Check className="w-3 h-3 text-brand-600" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Size picker */}
+              {variantPicker.product.sizes && variantPicker.product.sizes.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Ruler className="w-3 h-3" /> Pilih Ukuran
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {variantPicker.product.sizes.map(s => {
+                      const isSelected = variantPicker.selectedSize === s;
+                      return (
+                        <button
+                          key={s}
+                          onClick={() => setVariantPicker(prev => prev ? { ...prev, selectedSize: s } : null)}
+                          className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all min-w-[40px] ${
+                            isSelected
+                              ? 'border-brand-500 bg-brand-600 text-white shadow-sm'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700'
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Add to cart button */}
+              <button
+                onClick={() => {
+                  addToCart(
+                    variantPicker.product,
+                    1,
+                    variantPicker.selectedColor,
+                    variantPicker.selectedSize
+                  );
+                  setVariantPicker(null);
+                }}
+                className="w-full py-3 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 transition-colors shadow-md flex items-center justify-center gap-2"
+              >
+                <ShoppingBag className="w-4 h-4" />
+                Tambah ke Keranjang
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

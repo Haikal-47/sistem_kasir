@@ -18,9 +18,9 @@ interface POSContextType {
   
   // Cart
   cart: CartItem[];
-  addToCart: (product: Product, quantity?: number) => void;
-  updateCartItemQty: (productId: string, quantity: number) => void;
-  removeFromCart: (productId: string) => void;
+  addToCart: (product: Product, quantity?: number, selectedColor?: string, selectedSize?: string) => void;
+  updateCartItemQty: (cartKey: string, quantity: number) => void;
+  removeFromCart: (cartKey: string) => void;
   clearCart: () => void;
   cartDiscount: number;
   setCartDiscount: (discount: number) => void;
@@ -126,6 +126,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!parsed.role) {
           parsed.role = parsed.name?.toLowerCase().includes('admin') ? 'super_admin' : 'kasir';
         }
+        if (parsed.name === 'Budi Pratama') {
+          parsed.name = 'Gusti';
+        }
         return parsed;
       } catch (e) { console.error(e); }
     }
@@ -218,6 +221,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (cashierRes.ok) {
             const cashierData = await cashierRes.json();
             if (cashierData && cashierData.name) {
+              if (cashierData.name === 'Budi Pratama') {
+                cashierData.name = 'Gusti';
+              }
               setCashier(cashierData);
             }
           }
@@ -281,28 +287,36 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Cart operations
-  const addToCart = (product: Product, quantity: number = 1) => {
+  // cartItemKey = productId + optional color + optional size → allows same product in diff variants
+  const getCartKey = (productId: string, color?: string, size?: string) =>
+    `${productId}|${color || ''}|${size || ''}`;
+
+  const addToCart = (product: Product, quantity: number = 1, selectedColor?: string, selectedSize?: string) => {
     playBeep();
     setCart(prev => {
-      const existing = prev.find(item => item.product.id === product.id);
+      const key = getCartKey(product.id, selectedColor, selectedSize);
+      const existing = prev.find(item => getCartKey(item.product.id, item.selectedColor, item.selectedSize) === key);
       if (existing) {
         const newQty = Math.min(existing.quantity + quantity, product.stock);
         return prev.map(item =>
-          item.product.id === product.id ? { ...item, quantity: newQty } : item
+          getCartKey(item.product.id, item.selectedColor, item.selectedSize) === key
+            ? { ...item, quantity: newQty }
+            : item
         );
       }
-      return [{ product, quantity: Math.min(quantity, Math.max(1, product.stock)) }, ...prev];
+      return [{ product, quantity: Math.min(quantity, Math.max(1, product.stock)), selectedColor, selectedSize }, ...prev];
     });
   };
 
-  const updateCartItemQty = (productId: string, quantity: number) => {
+  const updateCartItemQty = (cartKey: string, quantity: number) => {
     if (quantity <= 0) {
-      removeFromCart(productId);
+      removeFromCart(cartKey);
       return;
     }
     setCart(prev =>
       prev.map(item => {
-        if (item.product.id === productId) {
+        const key = getCartKey(item.product.id, item.selectedColor, item.selectedSize);
+        if (key === cartKey) {
           const maxStock = item.product.stock;
           return { ...item, quantity: Math.min(quantity, maxStock) };
         }
@@ -311,8 +325,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  const removeFromCart = (productId: string) => {
-    setCart(prev => prev.filter(item => item.product.id !== productId));
+  const removeFromCart = (cartKey: string) => {
+    setCart(prev => prev.filter(item => getCartKey(item.product.id, item.selectedColor, item.selectedSize) !== cartKey));
   };
 
   const clearCart = () => {
@@ -482,6 +496,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       price: item.product.price,
       quantity: item.quantity,
       subtotal: item.product.price * item.quantity,
+      selectedColor: item.selectedColor,
+      selectedSize: item.selectedSize,
     }));
 
     const changeAmount = Math.max(0, cashGiven - cartTotal);
@@ -531,6 +547,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       price: item.product.price,
       quantity: item.quantity,
       subtotal: item.product.price * item.quantity,
+      selectedColor: item.selectedColor,
+      selectedSize: item.selectedSize,
     }));
 
     const now = new Date().toISOString();

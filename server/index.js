@@ -306,9 +306,9 @@ app.get('/api/cashier', async (req, res) => {
     if (result.rows.length === 0) {
       return res.json({
         id: 'CSH-001',
-        name: 'Budi Pratama',
+        name: 'Gusti',
         shift: 'Shift 1 (07:00 - 15:00)',
-        outletName: 'MINIMARKET KASIR PRO',
+        outletName: 'ARFA FASHION',
         outletAddress: 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
         outletPhone: '021-5550192',
       });

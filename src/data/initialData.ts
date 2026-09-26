@@ -12,7 +12,7 @@ export const SUPER_ADMIN_PROFILE: CashierProfile = {
 
 export const INITIAL_CASHIER: CashierProfile = {
   id: 'CSH-001',
-  name: 'Budi Pratama',
+  name: 'Gusti',
   role: 'kasir',
   shift: 'Shift 1 (07:00 - 15:00)',
   outletName: 'ARFA FASHION',
@@ -54,6 +54,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 25,
     barcode: '8991001001014',
     unit: 'Pcs',
+    colors: ['Hitam', 'Putih', 'Navy', 'Abu-abu'],
+    sizes: ['S', 'M', 'L', 'XL'],
   },
   {
     id: 'PRD-002',
@@ -65,6 +67,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 30,
     barcode: '8991001001021',
     unit: 'Pcs',
+    colors: ['Hitam', 'Putih', 'Cream', 'Dusty Pink'],
+    sizes: ['S', 'M', 'L', 'XL'],
   },
   {
     id: 'PRD-003',
@@ -76,6 +80,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 20,
     barcode: '8991001001038',
     unit: 'Pcs',
+    colors: ['Hitam', 'Coklat', 'Navy'],
+    sizes: ['S', 'M', 'L', 'XL', 'XXL'],
   },
   {
     id: 'PRD-004',
@@ -87,6 +93,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 18,
     barcode: '8991001001045',
     unit: 'Pcs',
+    colors: ['Hitam', 'Putih', 'Maroon', 'Olive'],
+    sizes: ['S', 'M', 'L', 'XL'],
   },
   {
     id: 'PRD-005',
@@ -98,6 +106,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 22,
     barcode: '8991001001052',
     unit: 'Pcs',
+    colors: ['Putih', 'Cream', 'Sage Green', 'Dusty Blue'],
+    sizes: ['M', 'L', 'XL', 'XXL'],
   },
   {
     id: 'PRD-006',
@@ -109,6 +119,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 24,
     barcode: '8991001001069',
     unit: 'Pcs',
+    colors: ['Hitam', 'Putih', 'Dusty Pink', 'Lavender'],
+    sizes: ['All Size'],
   },
   {
     id: 'PRD-007',
@@ -120,6 +132,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 16,
     barcode: '8991001001076',
     unit: 'Pcs',
+    colors: ['Hitam', 'Navy', 'Maroon', 'Olive', 'Grey'],
+    sizes: ['S', 'M', 'L', 'XL', 'XXL'],
   },
   {
     id: 'PRD-008',
@@ -131,6 +145,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 4, // Stok rendah untuk demo alert
     barcode: '8991001001083',
     unit: 'Pcs',
+    colors: ['Biru Bunga', 'Pink Bunga', 'Hijau Bunga'],
+    sizes: ['S', 'M', 'L'],
   },
   {
     id: 'PRD-009',
@@ -142,6 +158,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 28,
     barcode: '8991001001090',
     unit: 'Pcs',
+    colors: ['Hitam', 'Cream', 'Coklat Muda', 'Abu-abu'],
+    sizes: ['S', 'M', 'L', 'XL'],
   },
   {
     id: 'PRD-010',
@@ -153,6 +171,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 15,
     barcode: '8991001001106',
     unit: 'Pcs',
+    colors: ['Light Blue', 'Dark Blue', 'Black Denim'],
+    sizes: ['27', '28', '29', '30', '31', '32'],
   },
   {
     id: 'PRD-011',
@@ -164,6 +184,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 3, // Stok rendah untuk demo alert
     barcode: '8991001001113',
     unit: 'Pcs',
+    colors: ['Hitam', 'Maroon', 'Camel'],
+    sizes: ['All Size'],
   },
   {
     id: 'PRD-012',
@@ -175,6 +197,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 12,
     barcode: '8991001001120',
     unit: 'Pcs',
+    colors: ['Light Blue', 'Dark Blue'],
+    sizes: ['M', 'L', 'XL', 'XXL'],
   },
   {
     id: 'PRD-013',
@@ -186,6 +210,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 50,
     barcode: '8991001001137',
     unit: 'Pcs',
+    colors: ['Hitam', 'Putih', 'Cream', 'Dusty Pink', 'Sage', 'Navy', 'Grey', 'Maroon'],
+    sizes: ['All Size'],
   },
   {
     id: 'PRD-014',
@@ -197,6 +223,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 45,
     barcode: '8991001001144',
     unit: 'Pcs',
+    colors: ['Hitam', 'Putih', 'Cream', 'Dusty Lilac', 'Sage Green', 'Nude'],
+    sizes: ['All Size'],
   },
   {
     id: 'PRD-015',
@@ -208,6 +236,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 35,
     barcode: '8991001001151',
     unit: 'Pcs',
+    colors: ['Hitam', 'Putih', 'Navy', 'Abu-abu', 'Maroon', 'Olive'],
+    sizes: ['S', 'M', 'L', 'XL', 'XXL'],
   }
 ];
 
@@ -216,7 +246,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     id: 'TRX-101',
     invoiceNumber: 'INV/20260919/0001',
     date: '2026-09-19T08:32:15',
-    cashierName: 'Budi Pratama',
+    cashierName: 'Gusti',
     items: [
       {
         productId: 'PRD-001',
@@ -248,7 +278,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     id: 'TRX-102',
     invoiceNumber: 'INV/20260919/0002',
     date: '2026-09-19T09:14:40',
-    cashierName: 'Budi Pratama',
+    cashierName: 'Gusti',
     items: [
       {
         productId: 'PRD-003',
@@ -277,13 +307,13 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     transferProofUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&q=80',
     transferProofVerified: true,
     transferConfirmedAt: '2026-09-19T09:16:00',
-    transferConfirmedBy: 'Budi Pratama',
+    transferConfirmedBy: 'Gusti',
   },
   {
     id: 'TRX-103',
     invoiceNumber: 'INV/20260919/0003',
     date: '2026-09-19T10:05:22',
-    cashierName: 'Budi Pratama',
+    cashierName: 'Gusti',
     items: [
       {
         productId: 'PRD-007',

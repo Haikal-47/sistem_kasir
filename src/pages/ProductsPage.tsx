@@ -13,14 +13,25 @@ import {
   Check, 
   Sparkles,
   Layers,
-  ArrowUpDown,
   Printer,
-  Tag,
   ShieldAlert,
   Eye,
-  Lock
+  Palette,
+  Ruler,
 } from 'lucide-react';
 import { PrintBarcodeModal } from '../components/PrintBarcodeModal';
+
+// ── Color name → HEX mapping for dot previews ─────────────────────────────
+const COLOR_HEX_MAP: Record<string, string> = {
+  'hitam': '#1a1a1a', 'putih': '#f5f5f5', 'navy': '#1e3a5f', 'abu-abu': '#9e9e9e',
+  'cream': '#f5f0e8', 'dusty pink': '#e8b4b8', 'maroon': '#800020', 'olive': '#6b7c3d',
+  'sage green': '#87a878', 'dusty blue': '#7ba5c4', 'lavender': '#c8b4e0',
+  'coklat': '#7d5a3c', 'coklat muda': '#c8956c', 'camel': '#c19a6b', 'grey': '#9e9e9e',
+  'light blue': '#aed6f1', 'dark blue': '#1a3a5c', 'black denim': '#2c2c3e',
+  'biru bunga': '#6fa8d6', 'pink bunga': '#e8a0b4', 'hijau bunga': '#88c9a1',
+  'sage': '#87a878', 'dusty lilac': '#b098c4', 'nude': '#e8c9a8',
+};
+const getColorHex = (name: string) => COLOR_HEX_MAP[name.toLowerCase()] || '#d1d5db';
 
 export const ProductsPage: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, isSuperAdmin, cashier } = usePOS();
@@ -42,7 +53,12 @@ export const ProductsPage: React.FC = () => {
     stock: 10,
     barcode: '',
     unit: 'Pcs',
+    colorsInput: '',  // comma-separated string for input
+    sizesInput: '',   // comma-separated string for input
   });
+
+  const parseList = (input: string): string[] =>
+    input.split(',').map(s => s.trim()).filter(Boolean);
 
   const categories = ['Semua', ...Array.from(new Set(products.map(p => p.category)))];
 
@@ -71,6 +87,8 @@ export const ProductsPage: React.FC = () => {
       stock: 10,
       barcode: `899${Math.floor(1000000000 + Math.random() * 9000000000)}`,
       unit: 'Pcs',
+      colorsInput: '',
+      sizesInput: '',
     });
     setIsModalOpen(true);
   };
@@ -90,6 +108,8 @@ export const ProductsPage: React.FC = () => {
       stock: p.stock,
       barcode: p.barcode,
       unit: p.unit,
+      colorsInput: (p.colors || []).join(', '),
+      sizesInput: (p.sizes || []).join(', '),
     });
     setIsModalOpen(true);
   };
@@ -105,10 +125,23 @@ export const ProductsPage: React.FC = () => {
       return;
     }
 
+    const productPayload = {
+      name: formData.name.trim(),
+      brand: formData.brand.trim(),
+      category: formData.category.trim(),
+      price: formData.price,
+      costPrice: formData.costPrice,
+      stock: formData.stock,
+      barcode: formData.barcode.trim(),
+      unit: formData.unit.trim() || 'Pcs',
+      colors: parseList(formData.colorsInput),
+      sizes: parseList(formData.sizesInput),
+    };
+
     if (editingProduct) {
-      updateProduct(editingProduct.id, formData);
+      updateProduct(editingProduct.id, productPayload);
     } else {
-      addProduct(formData);
+      addProduct(productPayload);
     }
 
     setIsModalOpen(false);
@@ -117,6 +150,43 @@ export const ProductsPage: React.FC = () => {
   const generateNewBarcode = () => {
     const newCode = `899${Math.floor(1000000000 + Math.random() * 9000000000)}`;
     setFormData(prev => ({ ...prev, barcode: newCode }));
+  };
+
+  // ── Small color dot strip ──────────────────────────────────────────────────
+  const ColorDots = ({ colors }: { colors?: string[] }) => {
+    if (!colors || colors.length === 0) return <span className="text-slate-300 text-[10px]">—</span>;
+    const MAX_SHOW = 6;
+    const shown = colors.slice(0, MAX_SHOW);
+    const extra = colors.length - MAX_SHOW;
+    return (
+      <div className="flex items-center gap-0.5 flex-wrap">
+        {shown.map(c => (
+          <span
+            key={c}
+            title={c}
+            className="w-3.5 h-3.5 rounded-full border border-white shadow-sm shrink-0"
+            style={{ backgroundColor: getColorHex(c) }}
+          />
+        ))}
+        {extra > 0 && (
+          <span className="text-[9px] text-slate-500 font-bold">+{extra}</span>
+        )}
+      </div>
+    );
+  };
+
+  // ── Size chips ──────────────────────────────────────────────────────────────
+  const SizeChips = ({ sizes }: { sizes?: string[] }) => {
+    if (!sizes || sizes.length === 0) return <span className="text-slate-300 text-[10px]">—</span>;
+    return (
+      <div className="flex items-center gap-1 flex-wrap">
+        {sizes.map(s => (
+          <span key={s} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200">
+            {s}
+          </span>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -130,7 +200,7 @@ export const ProductsPage: React.FC = () => {
             <span>Kelola Katalog &amp; Stok Produk</span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Total {products.length} produk terdaftar dalam database inventaris kasir.
+            Total {products.length} produk terdaftar · mencakup variasi warna &amp; ukuran fashion.
           </p>
         </div>
 
@@ -199,7 +269,7 @@ export const ProductsPage: React.FC = () => {
         <div className="mx-3 md:mx-6 mt-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 text-xs text-amber-900 shadow-2xs">
           <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
           <div className="flex-1">
-            <strong>Peran: Kasir ({cashier.name}) — Mode Lihat Saja:</strong> Anda hanya dapat melihat katalog dan stok produk. Tambah, edit, dan hapus produk dibatasi khusus untuk <strong>Super Admin</strong>.
+            <strong>Peran: Kasir ({cashier.name}) — Mode Lihat Saja:</strong> Anda hanya dapat melihat katalog, stok, warna, dan ukuran produk. Tambah, edit, dan hapus produk dibatasi khusus untuk <strong>Super Admin</strong>.
           </div>
         </div>
       )}
@@ -228,6 +298,21 @@ export const ProductsPage: React.FC = () => {
                         <Barcode className="w-3 h-3 text-slate-400" />
                         <span className="font-mono text-[10px] text-slate-500">{product.barcode}</span>
                       </div>
+                      {/* Color and size row */}
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        {product.colors && product.colors.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <Palette className="w-3 h-3 text-slate-400" />
+                            <ColorDots colors={product.colors} />
+                          </div>
+                        )}
+                        {product.sizes && product.sizes.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <Ruler className="w-3 h-3 text-slate-400" />
+                            <SizeChips sizes={product.sizes} />
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                       <span className="font-mono font-extrabold text-sm text-slate-900">{formatRupiah(product.price)}</span>
@@ -239,7 +324,6 @@ export const ProductsPage: React.FC = () => {
                     </div>
                   </div>
                   <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
-                    {/* Quick stock adjust - only Super Admin */}
                     {isSuperAdmin ? (
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-slate-500">Stok:</span>
@@ -293,6 +377,12 @@ export const ProductsPage: React.FC = () => {
                 <th className="py-3 px-4">Nama Produk</th>
                 <th className="py-3 px-4">Brand</th>
                 <th className="py-3 px-4">Kategori</th>
+                <th className="py-3 px-4">
+                  <span className="flex items-center gap-1"><Palette className="w-3 h-3" />Warna</span>
+                </th>
+                <th className="py-3 px-4">
+                  <span className="flex items-center gap-1"><Ruler className="w-3 h-3" />Ukuran</span>
+                </th>
                 <th className="py-3 px-4">Harga Jual</th>
                 <th className="py-3 px-4">Stok</th>
                 <th className="py-3 px-4 text-right">Aksi</th>
@@ -315,8 +405,8 @@ export const ProductsPage: React.FC = () => {
                     </td>
 
                     {/* Name */}
-                    <td className="py-3 px-4 font-bold text-slate-900">
-                      {product.name}
+                    <td className="py-3 px-4 font-bold text-slate-900 max-w-[180px]">
+                      <span className="line-clamp-2 leading-snug">{product.name}</span>
                     </td>
 
                     {/* Brand */}
@@ -329,6 +419,23 @@ export const ProductsPage: React.FC = () => {
                       <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold">
                         {product.category}
                       </span>
+                    </td>
+
+                    {/* Colors */}
+                    <td className="py-3 px-4">
+                      <div className="flex flex-col gap-1">
+                        <ColorDots colors={product.colors} />
+                        {product.colors && product.colors.length > 0 && (
+                          <span className="text-[9px] text-slate-400 leading-tight" title={product.colors.join(', ')}>
+                            {product.colors.slice(0, 3).join(', ')}{product.colors.length > 3 ? ` +${product.colors.length - 3}` : ''}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Sizes */}
+                    <td className="py-3 px-4">
+                      <SizeChips sizes={product.sizes} />
                     </td>
 
                     {/* Price */}
@@ -349,7 +456,6 @@ export const ProductsPage: React.FC = () => {
                           {product.stock} {product.unit}
                         </span>
 
-                        {/* Quick stock +/- only for Super Admin */}
                         {isSuperAdmin && (
                           <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
                             <button
@@ -426,8 +532,8 @@ export const ProductsPage: React.FC = () => {
       {/* Modal Add / Edit Product */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
-            <div className="p-5 bg-slate-900 text-white flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 max-h-[92vh] flex flex-col">
+            <div className="p-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <h3 className="font-bold text-sm flex items-center gap-2">
                 <Package className="w-4 h-4 text-brand-400" />
                 <span>{editingProduct ? 'Edit Data Produk' : 'Tambah Produk Baru'}</span>
@@ -440,7 +546,7 @@ export const ProductsPage: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
               {/* Product Name */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -487,7 +593,58 @@ export const ProductsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Price & Unit row */}
+              {/* Colors */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <Palette className="w-3.5 h-3.5 text-brand-500" />
+                  Warna Tersedia <span className="text-slate-400 font-normal">(pisahkan dengan koma)</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.colorsInput}
+                  onChange={(e) => setFormData({ ...formData, colorsInput: e.target.value })}
+                  placeholder="Contoh: Hitam, Putih, Navy, Abu-abu"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden"
+                />
+                {/* Preview dots */}
+                {formData.colorsInput && (
+                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                    {parseList(formData.colorsInput).map(c => (
+                      <span key={c} className="flex items-center gap-1 text-[10px] text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorHex(c) }} />
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Sizes */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                  <Ruler className="w-3.5 h-3.5 text-brand-500" />
+                  Ukuran Tersedia <span className="text-slate-400 font-normal">(pisahkan dengan koma)</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.sizesInput}
+                  onChange={(e) => setFormData({ ...formData, sizesInput: e.target.value })}
+                  placeholder="Contoh: S, M, L, XL, XXL  atau  All Size  atau  27, 28, 29, 30"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden"
+                />
+                {/* Preview chips */}
+                {formData.sizesInput && (
+                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                    {parseList(formData.sizesInput).map(s => (
+                      <span key={s} className="px-2 py-0.5 rounded bg-brand-50 text-brand-700 text-[10px] font-bold border border-brand-200">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Price & Stock row */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">

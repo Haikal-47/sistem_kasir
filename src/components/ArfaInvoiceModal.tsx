@@ -232,6 +232,17 @@ export const ArfaInvoiceModal: React.FC<ArfaInvoiceModalProps> = ({ transaction,
                               ({item.brand})
                             </div>
                           )}
+                          {/* Variant: warna & ukuran */}
+                          {(item.selectedColor || item.selectedSize) && (
+                            <div className="text-[10px] text-slate-600 font-medium mt-0.5 flex items-center gap-1.5">
+                              {item.selectedColor && (
+                                <span>🎨 {item.selectedColor}</span>
+                              )}
+                              {item.selectedSize && (
+                                <span>📏 {item.selectedSize}</span>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="py-2 px-2 text-center font-bold text-black align-middle">
                           {item.quantity}

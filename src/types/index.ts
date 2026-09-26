@@ -8,11 +8,15 @@ export interface Product {
   stock: number;
   barcode: string;
   unit: string;
+  colors?: string[];   // e.g. ['Hitam', 'Putih', 'Navy']
+  sizes?: string[];    // e.g. ['S', 'M', 'L', 'XL'] or ['All Size']
 }
 
 export interface CartItem {
   product: Product;
   quantity: number;
+  selectedColor?: string;
+  selectedSize?: string;
   discountPercent?: number;
   note?: string;
 }
@@ -44,6 +48,8 @@ export interface TransactionItem {
   price: number;
   quantity: number;
   subtotal: number;
+  selectedColor?: string;
+  selectedSize?: string;
 }
 
 export interface Transaction {
