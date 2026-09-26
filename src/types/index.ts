@@ -1,3 +1,11 @@
+export interface ProductVariant {
+  id: string;
+  color: string;
+  size: string;
+  stock: number;
+  sku?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -10,6 +18,7 @@ export interface Product {
   unit: string;
   colors?: string[];   // e.g. ['Hitam', 'Putih', 'Navy']
   sizes?: string[];    // e.g. ['S', 'M', 'L', 'XL'] or ['All Size']
+  variants?: ProductVariant[]; // Variant per color & size with specific stock
 }
 
 export interface CartItem {
@@ -17,11 +26,12 @@ export interface CartItem {
   quantity: number;
   selectedColor?: string;
   selectedSize?: string;
+  variantId?: string;
   discountPercent?: number;
   note?: string;
 }
 
-// PaymentMethod is now a free string so cashiers can define any method name
+// PaymentMethod is a free string so cashiers can define any method name
 export type PaymentMethod = string;
 
 export type TransactionStatus = 'LUNAS' | 'MENUNGGU_KONFIRMASI' | 'BATAL';
@@ -50,6 +60,7 @@ export interface TransactionItem {
   subtotal: number;
   selectedColor?: string;
   selectedSize?: string;
+  variantId?: string;
 }
 
 export interface Transaction {
@@ -79,6 +90,15 @@ export interface Transaction {
 
 export type UserRole = 'super_admin' | 'kasir';
 
+export interface UserAccount {
+  id: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  isActive: boolean;
+  createdAt?: string;
+}
+
 export interface CashierProfile {
   id: string;
   name: string;
@@ -89,10 +109,27 @@ export interface CashierProfile {
   outletPhone: string;
 }
 
-export interface CashierAuth {
-  isLoggedIn: boolean;
-  pin: string; // stored as simple base64, not for production security
+export interface StoreSettings {
+  id: string;
+  storeName: string;
+  storeAddress: string;
+  storePhone: string;
+  minStockAlert: number;
+  receiptFooter: string;
 }
 
-export type ActiveTab = 'transaksi' | 'dashboard' | 'produk' | 'riwayat' | 'metode';
+export interface CashierAuth {
+  isLoggedIn: boolean;
+  pin: string;
+}
 
+export type ActiveTab = 
+  | 'dashboard'
+  | 'transaksi'
+  | 'produk'
+  | 'stok'
+  | 'riwayat'
+  | 'laporan'
+  | 'pengguna'
+  | 'metode'
+  | 'pengaturan';

@@ -932,21 +932,45 @@ export const TransactionPage: React.FC = () => {
                 <div>
                   <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
                     <Ruler className="w-3 h-3" /> Pilih Ukuran
+                    {variantPicker.selectedSize && (
+                      <span className="normal-case font-semibold text-slate-700 ml-1">— {variantPicker.selectedSize}</span>
+                    )}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {variantPicker.product.sizes.map(s => {
                       const isSelected = variantPicker.selectedSize === s;
+                      // Check stock of this specific size with currently selected color
+                      const vMatch = variantPicker.product.variants?.find(
+                        v => (!variantPicker.selectedColor || v.color.toLowerCase() === variantPicker.selectedColor.toLowerCase()) &&
+                             v.size.toLowerCase() === s.toLowerCase()
+                      );
+                      const sStock = vMatch !== undefined ? vMatch.stock : variantPicker.product.stock;
+                      const sOutOfStock = sStock <= 0;
+
                       return (
                         <button
                           key={s}
                           onClick={() => setVariantPicker(prev => prev ? { ...prev, selectedSize: s } : null)}
-                          className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all min-w-[40px] ${
+                          className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all min-w-[46px] flex items-center justify-center gap-1 ${
                             isSelected
                               ? 'border-brand-500 bg-brand-600 text-white shadow-sm'
+                              : sOutOfStock
+                              ? 'border-slate-200 bg-slate-100 text-slate-400 line-through'
                               : 'border-slate-200 bg-white text-slate-700 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700'
                           }`}
                         >
-                          {s}
+                          <span>{s}</span>
+                          {vMatch !== undefined && (
+                            <span className={`text-[9px] font-mono px-1 rounded ${
+                              isSelected 
+                                ? 'bg-white/20 text-white' 
+                                : sOutOfStock 
+                                ? 'text-rose-500' 
+                                : 'text-slate-500 bg-slate-100'
+                            }`}>
+                              {sStock}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -954,22 +978,69 @@ export const TransactionPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Add to cart button */}
-              <button
-                onClick={() => {
-                  addToCart(
-                    variantPicker.product,
-                    1,
-                    variantPicker.selectedColor,
-                    variantPicker.selectedSize
-                  );
-                  setVariantPicker(null);
-                }}
-                className="w-full py-3 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 transition-colors shadow-md flex items-center justify-center gap-2"
-              >
-                <ShoppingBag className="w-4 h-4" />
-                Tambah ke Keranjang
-              </button>
+              {/* Variant Stock & SKU Summary */}
+              {(() => {
+                const activeVariant = variantPicker.product.variants?.find(
+                  v => (!variantPicker.selectedColor || v.color.toLowerCase() === variantPicker.selectedColor.toLowerCase()) &&
+                       (!variantPicker.selectedSize || v.size.toLowerCase() === variantPicker.selectedSize.toLowerCase())
+                );
+                const currentStock = activeVariant !== undefined ? activeVariant.stock : variantPicker.product.stock;
+                const isOutOfStock = currentStock <= 0;
+
+                return (
+                  <div className="space-y-3">
+                    <div className={`p-3 rounded-xl border flex items-center justify-between text-xs ${
+                      isOutOfStock
+                        ? 'bg-rose-50 border-rose-200 text-rose-800'
+                        : currentStock <= 3
+                        ? 'bg-amber-50 border-amber-200 text-amber-800'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                    }`}>
+                      <div>
+                        <span className="font-semibold">
+                          {variantPicker.selectedColor || 'Semua'} / {variantPicker.selectedSize || 'Semua'}
+                        </span>
+                        {activeVariant?.sku && (
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            SKU: {activeVariant.sku}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className={`font-black font-mono text-sm ${isOutOfStock ? 'text-rose-600' : 'text-slate-900'}`}>
+                          {isOutOfStock ? 'Habis (0)' : `${currentStock} pcs`}
+                        </span>
+                        <div className="text-[10px] text-slate-500">
+                          {isOutOfStock ? 'Tidak bisa diproses' : 'Stok tersedia'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Add to cart button */}
+                    <button
+                      disabled={isOutOfStock}
+                      onClick={() => {
+                        if (isOutOfStock) return;
+                        addToCart(
+                          variantPicker.product,
+                          1,
+                          variantPicker.selectedColor,
+                          variantPicker.selectedSize
+                        );
+                        setVariantPicker(null);
+                      }}
+                      className={`w-full py-3 rounded-xl text-sm font-bold transition-colors shadow-md flex items-center justify-center gap-2 ${
+                        isOutOfStock
+                          ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                          : 'bg-brand-600 text-white hover:bg-brand-700'
+                      }`}
+                    >
+                      <ShoppingBag className="w-4 h-4" />
+                      {isOutOfStock ? 'Stok Varian Ini Habis' : 'Tambah ke Keranjang'}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

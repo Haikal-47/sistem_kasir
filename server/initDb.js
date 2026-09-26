@@ -17,7 +17,37 @@ export const initDatabase = async () => {
         stock INT NOT NULL DEFAULT 0,
         barcode VARCHAR(100) UNIQUE NOT NULL,
         unit VARCHAR(50) DEFAULT 'Pcs',
+        colors JSONB DEFAULT '[]'::jsonb,
+        sizes JSONB DEFAULT '[]'::jsonb,
+        variants JSONB DEFAULT '[]'::jsonb,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS colors JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS sizes JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS variants JSONB DEFAULT '[]'::jsonb;
+
+      -- Users Table (Role-based Authentication)
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(64) PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        role VARCHAR(20) NOT NULL DEFAULT 'kasir',
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Store Settings Table
+      CREATE TABLE IF NOT EXISTS store_settings (
+        id VARCHAR(64) PRIMARY KEY,
+        store_name VARCHAR(255) NOT NULL,
+        store_address TEXT,
+        store_phone VARCHAR(50),
+        min_stock_alert INT DEFAULT 5,
+        receipt_footer TEXT,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -157,57 +187,88 @@ export const initDatabase = async () => {
       `);
     }
 
-    // Check if products have old grocery items or need fashion migration
-    const oldGroceryCheck = await client.query(`
-      SELECT COUNT(*) FROM products WHERE name ILIKE '%Aqua%' OR category IN ('Minuman', 'Makanan Instan')
-    `);
-    const hasOldGrocery = parseInt(oldGroceryCheck.rows[0].count, 10) > 0;
-
-    const productCheck = await client.query(`SELECT COUNT(*) FROM products`);
-    if (parseInt(productCheck.rows[0].count, 10) === 0 || hasOldGrocery) {
-      if (hasOldGrocery) {
-        console.log('🔄 Memperbarui katalog dari produk minimarket ke produk fashion ARFA FASHION...');
-        // Hapus transaksi lama yang mereferensikan produk minimarket
-        await client.query(`DELETE FROM transactions WHERE items::text ILIKE '%Aqua%' OR items::text ILIKE '%Indomie%'`);
-        // Hapus produk minimarket lama
-        await client.query(`DELETE FROM products WHERE name ILIKE '%Aqua%' OR category IN ('Minuman', 'Makanan Instan', 'Susu & Olahan', 'Snack & Cokelat', 'Permen & Manisan', 'Kopi & Teh', 'Perawatan Tubuh')`);
-      }
-
-      const initialProducts = [
-        ['PRD-001', 'Atasan Stripe Polo Kerah Jeans', 'BY.ELFARA', 'Atasan & Kemeja', 145000, 110000, 25, '8991001001014', 'Pcs'],
-        ['PRD-002', 'Atasan Stripe Polo Kerah Jeans Polos', 'BY.ELFARA', 'Atasan & Kemeja', 139000, 105000, 30, '8991001001021', 'Pcs'],
-        ['PRD-003', 'Cardigan Stripe Kerah Jeans', 'BY.ELFARA', 'Cardigan & Outer', 146000, 112000, 20, '8991001001038', 'Pcs'],
-        ['PRD-004', 'Cardigan Polo Stripe', 'BY.ELFARA', 'Cardigan & Outer', 155000, 120000, 18, '8991001001045', 'Pcs'],
-        ['PRD-005', 'Kemeja Linen Oversized Casual', 'ARFA FASHION', 'Atasan & Kemeja', 125000, 95000, 22, '8991001001052', 'Pcs'],
-        ['PRD-006', 'Blouse Tunik Rayon Premium', 'ARFA FASHION', 'Atasan & Kemeja', 115000, 85000, 24, '8991001001069', 'Pcs'],
-        ['PRD-007', 'Gamis Crinkle Airflow Premium', 'ARFA FASHION', 'Gamis & Dress', 175000, 130000, 16, '8991001001076', 'Pcs'],
-        ['PRD-008', 'Midi Dress Floral Rayon Viscose', 'ARFA FASHION', 'Gamis & Dress', 135000, 100000, 4, '8991001001083', 'Pcs'],
-        ['PRD-009', 'Kulot Highwaist Linen Premium', 'ARFA FASHION', 'Celana & Bawahan', 95000, 70000, 28, '8991001001090', 'Pcs'],
-        ['PRD-010', 'Celana Baggy Jeans Boyfriend Denim', 'ARFA FASHION', 'Celana & Bawahan', 145000, 110000, 15, '8991001001106', 'Pcs'],
-        ['PRD-011', 'Rok Plisket Flare Premium', 'ARFA FASHION', 'Celana & Bawahan', 75000, 55000, 3, '8991001001113', 'Pcs'],
-        ['PRD-012', 'Jaket Denim Vintage Washed', 'ARFA FASHION', 'Cardigan & Outer', 185000, 140000, 12, '8991001001120', 'Pcs'],
-        ['PRD-013', 'Pashmina Ceruty Baby Doll 180x75', 'ZAHRA HIJAB', 'Hijab & Kerudung', 35000, 24000, 50, '8991001001137', 'Pcs'],
-        ['PRD-014', 'Hijab Segi Empat Voal Miracle Laser Cut', 'ZAHRA HIJAB', 'Hijab & Kerudung', 38000, 26000, 45, '8991001001144', 'Pcs'],
-        ['PRD-015', 'Kaos Basic Cotton Combed 24s', 'ARFA FASHION', 'Atasan & Kemeja', 65000, 45000, 35, '8991001001151', 'Pcs']
-      ];
-
-      for (const p of initialProducts) {
-        await client.query(`
-          INSERT INTO products (id, name, brand, category, price, cost_price, stock, barcode, unit)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            brand = EXCLUDED.brand,
-            category = EXCLUDED.category,
-            price = EXCLUDED.price,
-            cost_price = EXCLUDED.cost_price,
-            stock = EXCLUDED.stock,
-            barcode = EXCLUDED.barcode,
-            unit = EXCLUDED.unit;
-        `, p);
-      }
-      console.log('✅ Katalog produk fashion ARFA FASHION berhasil di-seed ke Neon DB');
+    // Seed users table if empty
+    const userCheck = await client.query(`SELECT COUNT(*) FROM users`);
+    if (parseInt(userCheck.rows[0].count, 10) === 0) {
+      await client.query(`
+        INSERT INTO users (id, username, password, name, role, is_active)
+        VALUES 
+          ('USR-ADM-01', 'admin', 'admin123', 'Super Admin', 'super_admin', TRUE),
+          ('USR-KAS-01', 'gusti', '123456', 'Gusti', 'kasir', TRUE)
+        ON CONFLICT (id) DO NOTHING;
+      `);
+      console.log('✅ Akun pengguna Admin & Kasir berhasil di-seed');
     }
+
+    // Seed store_settings if empty
+    const settingsCheck = await client.query(`SELECT COUNT(*) FROM store_settings`);
+    if (parseInt(settingsCheck.rows[0].count, 10) === 0) {
+      await client.query(`
+        INSERT INTO store_settings (id, store_name, store_address, store_phone, min_stock_alert, receipt_footer)
+        VALUES ('SET-001', 'ARFA FASHION', 'Jl. Merdeka Raya No. 45, Jakarta Pusat', '021-5550192', 5, 'Terima kasih telah berbelanja di ARFA FASHION! Barang yang sudah dibeli dapat ditukar maksimal 3 hari.')
+        ON CONFLICT (id) DO NOTHING;
+      `);
+      console.log('✅ Pengaturan toko berhasil di-seed');
+    }
+
+    // Helper to generate variants per product
+    const buildVariants = (productId, colors, sizes, totalStock) => {
+      const combos = [];
+      for (const c of colors) {
+        for (const s of sizes) {
+          combos.push({ color: c, size: s });
+        }
+      }
+      if (combos.length === 0) return [];
+      const perVar = Math.max(1, Math.floor(totalStock / combos.length));
+      let currentAlloc = 0;
+      return combos.map((cb, idx) => {
+        const isLast = idx === combos.length - 1;
+        const stock = isLast ? Math.max(0, totalStock - currentAlloc) : perVar;
+        currentAlloc += stock;
+        const cleanColor = cb.color.replace(/\s+/g, '').slice(0, 3).toUpperCase();
+        const cleanSize = cb.size.replace(/\s+/g, '').toUpperCase();
+        return {
+          id: `${productId}-VAR-${idx + 1}`,
+          color: cb.color,
+          size: cb.size,
+          stock,
+          sku: `${productId.replace('PRD-', 'ARF-')}-${cleanColor}-${cleanSize}`
+        };
+      });
+    };
+
+    const fashionData = [
+      { id: 'PRD-001', name: 'Atasan Stripe Polo Kerah Jeans', brand: 'BY.ELFARA', category: 'Atasan & Kemeja', price: 145000, costPrice: 110000, stock: 25, barcode: '8991001001014', unit: 'Pcs', colors: ['Hitam', 'Putih', 'Navy', 'Abu-abu'], sizes: ['S', 'M', 'L', 'XL'] },
+      { id: 'PRD-002', name: 'Atasan Stripe Polo Kerah Jeans Polos', brand: 'BY.ELFARA', category: 'Atasan & Kemeja', price: 139000, costPrice: 105000, stock: 30, barcode: '8991001001021', unit: 'Pcs', colors: ['Hitam', 'Putih', 'Cream', 'Dusty Pink'], sizes: ['S', 'M', 'L', 'XL'] },
+      { id: 'PRD-003', name: 'Cardigan Stripe Kerah Jeans', brand: 'BY.ELFARA', category: 'Cardigan & Outer', price: 146000, costPrice: 112000, stock: 20, barcode: '8991001001038', unit: 'Pcs', colors: ['Hitam', 'Coklat', 'Navy'], sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
+      { id: 'PRD-004', name: 'Cardigan Polo Stripe', brand: 'BY.ELFARA', category: 'Cardigan & Outer', price: 155000, costPrice: 120000, stock: 18, barcode: '8991001001045', unit: 'Pcs', colors: ['Hitam', 'Putih', 'Maroon', 'Olive'], sizes: ['S', 'M', 'L', 'XL'] },
+      { id: 'PRD-005', name: 'Kemeja Linen Oversized Casual', brand: 'ARFA FASHION', category: 'Atasan & Kemeja', price: 125000, costPrice: 95000, stock: 22, barcode: '8991001001052', unit: 'Pcs', colors: ['Putih', 'Cream', 'Sage Green', 'Dusty Blue'], sizes: ['M', 'L', 'XL', 'XXL'] },
+      { id: 'PRD-006', name: 'Blouse Tunik Rayon Premium', brand: 'ARFA FASHION', category: 'Atasan & Kemeja', price: 115000, costPrice: 85000, stock: 24, barcode: '8991001001069', unit: 'Pcs', colors: ['Hitam', 'Putih', 'Dusty Pink', 'Lavender'], sizes: ['All Size'] },
+      { id: 'PRD-007', name: 'Gamis Crinkle Airflow Premium', brand: 'ARFA FASHION', category: 'Gamis & Dress', price: 175000, costPrice: 130000, stock: 16, barcode: '8991001001076', unit: 'Pcs', colors: ['Hitam', 'Navy', 'Maroon', 'Olive', 'Grey'], sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
+      { id: 'PRD-008', name: 'Midi Dress Floral Rayon Viscose', brand: 'ARFA FASHION', category: 'Gamis & Dress', price: 135000, costPrice: 100000, stock: 4, barcode: '8991001001083', unit: 'Pcs', colors: ['Biru Bunga', 'Pink Bunga', 'Hijau Bunga'], sizes: ['S', 'M', 'L'] },
+      { id: 'PRD-009', name: 'Kulot Highwaist Linen Premium', brand: 'ARFA FASHION', category: 'Celana & Bawahan', price: 95000, costPrice: 70000, stock: 28, barcode: '8991001001090', unit: 'Pcs', colors: ['Hitam', 'Cream', 'Coklat Muda', 'Abu-abu'], sizes: ['S', 'M', 'L', 'XL'] },
+      { id: 'PRD-010', name: 'Celana Baggy Jeans Boyfriend Denim', brand: 'ARFA FASHION', category: 'Celana & Bawahan', price: 145000, costPrice: 110000, stock: 15, barcode: '8991001001106', unit: 'Pcs', colors: ['Light Blue', 'Dark Blue', 'Black Denim'], sizes: ['27', '28', '29', '30', '31', '32'] },
+      { id: 'PRD-011', name: 'Rok Plisket Flare Premium', brand: 'ARFA FASHION', category: 'Celana & Bawahan', price: 75000, costPrice: 55000, stock: 3, barcode: '8991001001113', unit: 'Pcs', colors: ['Hitam', 'Maroon', 'Camel'], sizes: ['All Size'] },
+      { id: 'PRD-012', name: 'Jaket Denim Vintage Washed', brand: 'ARFA FASHION', category: 'Cardigan & Outer', price: 185000, costPrice: 140000, stock: 12, barcode: '8991001001120', unit: 'Pcs', colors: ['Light Blue', 'Dark Blue'], sizes: ['M', 'L', 'XL', 'XXL'] },
+      { id: 'PRD-013', name: 'Pashmina Ceruty Baby Doll 180x75', brand: 'ZAHRA HIJAB', category: 'Hijab & Kerudung', price: 35000, costPrice: 24000, stock: 50, barcode: '8991001001137', unit: 'Pcs', colors: ['Hitam', 'Putih', 'Cream', 'Dusty Pink', 'Sage', 'Navy', 'Grey', 'Maroon'], sizes: ['All Size'] },
+      { id: 'PRD-014', name: 'Hijab Segi Empat Voal Miracle Laser Cut', brand: 'ZAHRA HIJAB', category: 'Hijab & Kerudung', price: 38000, costPrice: 26000, stock: 45, barcode: '8991001001144', unit: 'Pcs', colors: ['Hitam', 'Putih', 'Cream', 'Dusty Lilac', 'Sage Green', 'Nude'], sizes: ['All Size'] },
+      { id: 'PRD-015', name: 'Kaos Basic Cotton Combed 24s', brand: 'ARFA FASHION', category: 'Atasan & Kemeja', price: 65000, costPrice: 45000, stock: 35, barcode: '8991001001151', unit: 'Pcs', colors: ['Hitam', 'Putih', 'Navy', 'Abu-abu', 'Maroon', 'Olive'], sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
+    ];
+
+    // Seed / update products with variants
+    for (const p of fashionData) {
+      const vars = buildVariants(p.id, p.colors, p.sizes, p.stock);
+      await client.query(`
+        INSERT INTO products (id, name, brand, category, price, cost_price, stock, barcode, unit, colors, sizes, variants)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (id) DO UPDATE SET
+          colors = EXCLUDED.colors,
+          sizes = EXCLUDED.sizes,
+          variants = CASE WHEN products.variants IS NULL OR products.variants = '[]'::jsonb THEN EXCLUDED.variants ELSE products.variants END;
+      `, [p.id, p.name, p.brand, p.category, p.price, p.costPrice, p.stock, p.barcode, p.unit, JSON.stringify(p.colors), JSON.stringify(p.sizes), JSON.stringify(vars)]);
+    }
+    console.log('✅ Varian produk fashion berhasil di-sinkronkan ke Neon DB');
 
     // Seed transactions if empty
     const txCheck = await client.query(`SELECT COUNT(*) FROM transactions`);

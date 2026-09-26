@@ -1,6 +1,24 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Product, CartItem, Transaction, CashierProfile, PaymentMethodConfig, ActiveTab, UserRole } from '../types';
-import { INITIAL_PRODUCTS, INITIAL_TRANSACTIONS, INITIAL_CASHIER, SUPER_ADMIN_PROFILE, INITIAL_PAYMENT_METHODS } from '../data/initialData';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import { 
+  Product, 
+  CartItem, 
+  Transaction, 
+  CashierProfile, 
+  PaymentMethodConfig, 
+  ActiveTab, 
+  UserRole,
+  UserAccount,
+  StoreSettings,
+  ProductVariant
+} from '../types';
+import { 
+  INITIAL_PRODUCTS, 
+  INITIAL_TRANSACTIONS, 
+  INITIAL_CASHIER, 
+  SUPER_ADMIN_PROFILE, 
+  INITIAL_PAYMENT_METHODS,
+  INITIAL_SETTINGS 
+} from '../data/initialData';
 
 interface POSContextType {
   activeTab: ActiveTab;
@@ -9,12 +27,33 @@ interface POSContextType {
   // Database connection indicator
   isDbConnected: boolean;
 
+  // Auth & Session
+  authToken: string;
+  currentUser: UserAccount | null;
+  login: (username: string, pass: string, portal: 'admin' | 'kasir') => Promise<{ success: boolean; error?: string }>;
+  logout: () => void;
+  isSuperAdmin: boolean;
+  switchRole: (role: UserRole) => void;
+
+  // User Management (Admin Only)
+  users: UserAccount[];
+  fetchUsers: () => Promise<void>;
+  createUser: (data: { username: string; password: string; name: string; role: UserRole }) => Promise<{ success: boolean; error?: string }>;
+  updateUser: (id: string, data: { username?: string; password?: string; name?: string; role?: UserRole; isActive?: boolean }) => Promise<{ success: boolean; error?: string }>;
+  deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Store Settings (Admin Only)
+  storeSettings: StoreSettings;
+  updateStoreSettings: (settings: Partial<StoreSettings>) => Promise<{ success: boolean; error?: string }>;
+
   // Products
   products: Product[];
   addProduct: (product: Omit<Product, 'id'>) => Product;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
   findProductByBarcode: (barcode: string) => Product | undefined;
+  adjustStock: (productId: string, deltaStock: number) => void;
+  adjustVariantStock: (productId: string, variantId: string, newStock: number) => void;
   
   // Cart
   cart: CartItem[];
@@ -55,11 +94,9 @@ interface POSContextType {
   isCheckoutOpen: boolean;
   setIsCheckoutOpen: (open: boolean) => void;
   
-  // Cashier Info & Role Management
+  // Cashier Info
   cashier: CashierProfile;
   updateCashier: (updates: Partial<CashierProfile>) => void;
-  isSuperAdmin: boolean;
-  switchRole: (role: UserRole) => void;
   
   // Profile & Password Management
   isProfileModalOpen: boolean;
@@ -76,10 +113,34 @@ interface POSContextType {
 const POSContext = createContext<POSContextType | undefined>(undefined);
 
 export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('transaksi');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
 
-  // Load from localStorage or initial fallback
+  // Auth State
+  const [authToken, setAuthToken] = useState<string>(() => {
+    return sessionStorage.getItem('pos_auth_token') || '';
+  });
+
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
+    const saved = sessionStorage.getItem('pos_current_user');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    }
+    return null;
+  });
+
+  const [users, setUsers] = useState<UserAccount[]>([]);
+
+  // Store Settings
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(() => {
+    const saved = localStorage.getItem('pos_store_settings');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    }
+    return INITIAL_SETTINGS;
+  });
+
+  // Products with variants
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('pos_products');
     if (saved) {
@@ -135,7 +196,89 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return INITIAL_CASHIER;
   });
 
-  const isSuperAdmin = cashier.role === 'super_admin';
+  const isSuperAdmin = (currentUser?.role === 'super_admin') || (cashier.role === 'super_admin');
+
+  const authHeaders = useCallback(() => {
+    return {
+      'Content-Type': 'application/json',
+      ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+    };
+  }, [authToken]);
+
+  // Auth Functions
+  const login = async (username: string, pass: string, portal: 'admin' | 'kasir'): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: pass, portal })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Login gagal. Coba lagi.' };
+      }
+
+      setAuthToken(data.token);
+      setCurrentUser(data.user);
+      sessionStorage.setItem('pos_auth_token', data.token);
+      sessionStorage.setItem('pos_current_user', JSON.stringify(data.user));
+      sessionStorage.setItem('pos_logged_in', 'true');
+      sessionStorage.setItem('pos_role', data.user.role);
+      sessionStorage.setItem('pos_login_name', data.user.name);
+
+      // Update cashier profile display
+      const updatedProfile: CashierProfile = {
+        id: data.user.id,
+        name: data.user.name,
+        role: data.user.role,
+        shift: data.user.role === 'super_admin' ? 'Semua Shift (Full Akses)' : 'Shift 1 (07:00 - 15:00)',
+        outletName: storeSettings.storeName || 'ARFA FASHION',
+        outletAddress: storeSettings.storeAddress || 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
+        outletPhone: storeSettings.storePhone || '021-5550192',
+      };
+      setCashier(updatedProfile);
+      localStorage.setItem('pos_cashier', JSON.stringify(updatedProfile));
+
+      return { success: true };
+    } catch (err: unknown) {
+      // Local fallback for offline mode
+      console.warn('Backend login unreachable, evaluating offline fallback:', err);
+      if (portal === 'admin') {
+        if (username.toLowerCase() === 'admin' && pass === 'admin123') {
+          const user: UserAccount = { id: 'USR-ADM-01', username: 'admin', name: 'Super Admin', role: 'super_admin', isActive: true };
+          setCurrentUser(user);
+          sessionStorage.setItem('pos_current_user', JSON.stringify(user));
+          sessionStorage.setItem('pos_logged_in', 'true');
+          sessionStorage.setItem('pos_role', 'super_admin');
+          sessionStorage.setItem('pos_login_name', user.name);
+          return { success: true };
+        }
+        return { success: false, error: 'Akses ditolak: Username atau kata sandi admin salah.' };
+      } else {
+        if (username.toLowerCase() === 'gusti' && (pass === '123456' || pass === 'gusti123')) {
+          const user: UserAccount = { id: 'USR-KAS-01', username: 'gusti', name: 'Gusti', role: 'kasir', isActive: true };
+          setCurrentUser(user);
+          sessionStorage.setItem('pos_current_user', JSON.stringify(user));
+          sessionStorage.setItem('pos_logged_in', 'true');
+          sessionStorage.setItem('pos_role', 'kasir');
+          sessionStorage.setItem('pos_login_name', user.name);
+          return { success: true };
+        }
+        return { success: false, error: 'Username atau kata sandi kasir salah.' };
+      }
+    }
+  };
+
+  const logout = () => {
+    setAuthToken('');
+    setCurrentUser(null);
+    sessionStorage.removeItem('pos_auth_token');
+    sessionStorage.removeItem('pos_current_user');
+    sessionStorage.removeItem('pos_logged_in');
+    sessionStorage.removeItem('pos_login_name');
+    sessionStorage.removeItem('pos_role');
+  };
 
   const switchRole = (newRole: UserRole) => {
     if (newRole === 'super_admin') {
@@ -163,6 +306,95 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // User Management
+  const fetchUsers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/users', { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch users:', err);
+    }
+  }, [authHeaders]);
+
+  const createUser = async (data: { username: string; password: string; name: string; role: UserRole }) => {
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(data)
+      });
+      const resData = await res.json();
+      if (!res.ok) {
+        return { success: false, error: resData.error || 'Gagal menambah pengguna.' };
+      }
+      setUsers(prev => [...prev, resData]);
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: (err as Error).message };
+    }
+  };
+
+  const updateUser = async (id: string, data: { username?: string; password?: string; name?: string; role?: UserRole; isActive?: boolean }) => {
+    try {
+      const res = await fetch(`/api/users/${id}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify(data)
+      });
+      const resData = await res.json();
+      if (!res.ok) {
+        return { success: false, error: resData.error || 'Gagal memperbarui pengguna.' };
+      }
+      setUsers(prev => prev.map(u => u.id === id ? resData : u));
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: (err as Error).message };
+    }
+  };
+
+  const deleteUser = async (id: string) => {
+    try {
+      const res = await fetch(`/api/users/${id}`, {
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+      const resData = await res.json();
+      if (!res.ok) {
+        return { success: false, error: resData.error || 'Gagal menghapus pengguna.' };
+      }
+      setUsers(prev => prev.filter(u => u.id !== id));
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: (err as Error).message };
+    }
+  };
+
+  // Store Settings
+  const updateStoreSettings = async (settings: Partial<StoreSettings>) => {
+    try {
+      const updated = { ...storeSettings, ...settings };
+      setStoreSettings(updated);
+      localStorage.setItem('pos_store_settings', JSON.stringify(updated));
+
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify(updated)
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        return { success: false, error: d.error };
+      }
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: (err as Error).message };
+    }
+  };
+
+  // Cart & Payment states
   const [cart, setCart] = useState<CartItem[]>(() => {
     const saved = localStorage.getItem('pos_cart');
     if (saved) {
@@ -189,41 +421,26 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     const loadFromNeonDb = async () => {
       try {
-        const [prodRes, txRes, cashierRes, pmRes] = await Promise.all([
+        const [prodRes, txRes, cashierRes, pmRes, setRes] = await Promise.all([
           fetch('/api/products'),
           fetch('/api/transactions'),
           fetch('/api/cashier'),
           fetch('/api/payment-methods'),
+          fetch('/api/settings'),
         ]);
 
         if (prodRes.ok && txRes.ok) {
           const prodData = await prodRes.json();
           const txData = await txRes.json();
           if (Array.isArray(prodData) && prodData.length > 0) {
-            const hasOldGrocery = prodData.some((p: Product) =>
-              p.name?.toLowerCase().includes('aqua') ||
-              p.name?.toLowerCase().includes('indomie') ||
-              p.category === 'Minuman' ||
-              p.category === 'Makanan Instan'
-            );
-            if (!hasOldGrocery) {
-              setProducts(prodData);
-            }
+            setProducts(prodData);
           }
           if (Array.isArray(txData)) {
-            const hasOldTx = txData.some((t: Transaction) =>
-              t.items?.some(it => it.name?.toLowerCase().includes('aqua') || it.name?.toLowerCase().includes('indomie'))
-            );
-            if (!hasOldTx) {
-              setTransactions(txData);
-            }
+            setTransactions(txData);
           }
           if (cashierRes.ok) {
             const cashierData = await cashierRes.json();
             if (cashierData && cashierData.name) {
-              if (cashierData.name === 'Budi Pratama') {
-                cashierData.name = 'Gusti';
-              }
               setCashier(cashierData);
             }
           }
@@ -231,6 +448,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const pmData = await pmRes.json();
             if (Array.isArray(pmData) && pmData.length > 0) {
               setPaymentMethods(pmData);
+            }
+          }
+          if (setRes.ok) {
+            const setData = await setRes.json();
+            if (setData && setData.storeName) {
+              setStoreSettings(setData);
             }
           }
           setIsDbConnected(true);
@@ -243,6 +466,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     loadFromNeonDb();
   }, []);
+
+  // Fetch users if logged in as Admin
+  useEffect(() => {
+    if (isSuperAdmin && authToken) {
+      fetchUsers();
+    }
+  }, [isSuperAdmin, authToken, fetchUsers]);
 
   // Sync to localStorage
   useEffect(() => {
@@ -281,30 +511,59 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.1);
-    } catch (e) {
+    } catch {
       // Ignore
     }
   };
 
-  // Cart operations
-  // cartItemKey = productId + optional color + optional size → allows same product in diff variants
+  // Cart operations with variant stock verification
   const getCartKey = (productId: string, color?: string, size?: string) =>
     `${productId}|${color || ''}|${size || ''}`;
 
   const addToCart = (product: Product, quantity: number = 1, selectedColor?: string, selectedSize?: string) => {
     playBeep();
+
+    // Determine max available stock for chosen variant
+    let maxAvailableStock = product.stock;
+    let chosenVariantId: string | undefined = undefined;
+
+    if (product.variants && product.variants.length > 0 && (selectedColor || selectedSize)) {
+      const match = product.variants.find(v => 
+        (!selectedColor || v.color.toLowerCase() === selectedColor.toLowerCase()) &&
+        (!selectedSize || v.size.toLowerCase() === selectedSize.toLowerCase())
+      );
+      if (match) {
+        maxAvailableStock = match.stock;
+        chosenVariantId = match.id;
+      }
+    }
+
+    if (maxAvailableStock <= 0) {
+      alert(`Stok untuk varian ${selectedColor || ''} ${selectedSize || ''} sudah habis.`);
+      return;
+    }
+
     setCart(prev => {
       const key = getCartKey(product.id, selectedColor, selectedSize);
       const existing = prev.find(item => getCartKey(item.product.id, item.selectedColor, item.selectedSize) === key);
       if (existing) {
-        const newQty = Math.min(existing.quantity + quantity, product.stock);
+        const newQty = Math.min(existing.quantity + quantity, maxAvailableStock);
         return prev.map(item =>
           getCartKey(item.product.id, item.selectedColor, item.selectedSize) === key
             ? { ...item, quantity: newQty }
             : item
         );
       }
-      return [{ product, quantity: Math.min(quantity, Math.max(1, product.stock)), selectedColor, selectedSize }, ...prev];
+      return [
+        { 
+          product, 
+          quantity: Math.min(quantity, maxAvailableStock), 
+          selectedColor, 
+          selectedSize,
+          variantId: chosenVariantId 
+        }, 
+        ...prev
+      ];
     });
   };
 
@@ -317,7 +576,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map(item => {
         const key = getCartKey(item.product.id, item.selectedColor, item.selectedSize);
         if (key === cartKey) {
-          const maxStock = item.product.stock;
+          let maxStock = item.product.stock;
+          if (item.product.variants && (item.selectedColor || item.selectedSize)) {
+            const v = item.product.variants.find(vr =>
+              (!item.selectedColor || vr.color.toLowerCase() === item.selectedColor.toLowerCase()) &&
+              (!item.selectedSize || vr.size.toLowerCase() === item.selectedSize.toLowerCase())
+            );
+            if (v) maxStock = v.stock;
+          }
           return { ...item, quantity: Math.min(quantity, maxStock) };
         }
         return item;
@@ -374,7 +640,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch('/api/products', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(data),
     }).catch(err => console.error('Failed to sync new product to Neon DB:', err));
 
@@ -400,9 +666,54 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch(`/api/products/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(updates),
     }).catch(err => console.error('Failed to update product in Neon DB:', err));
+  };
+
+  const adjustStock = (productId: string, deltaStock: number) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya role Super Admin yang dapat mengubah stok.');
+      return;
+    }
+    setProducts(prev =>
+      prev.map(p => {
+        if (p.id === productId) {
+          const newStock = Math.max(0, p.stock + deltaStock);
+          return { ...p, stock: newStock };
+        }
+        return p;
+      })
+    );
+
+    fetch(`/api/products/${productId}/stock`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ deltaStock })
+    }).catch(err => console.error('Failed to adjust stock in Neon DB:', err));
+  };
+
+  const adjustVariantStock = (productId: string, variantId: string, newStock: number) => {
+    if (!isSuperAdmin) {
+      alert('Akses Ditolak: Hanya role Super Admin yang dapat mengubah stok varian.');
+      return;
+    }
+    setProducts(prev =>
+      prev.map(p => {
+        if (p.id === productId && p.variants) {
+          const updatedVars = p.variants.map(v => v.id === variantId ? { ...v, stock: Math.max(0, newStock) } : v);
+          const totalStock = updatedVars.reduce((sum, v) => sum + v.stock, 0);
+          return { ...p, variants: updatedVars, stock: totalStock };
+        }
+        return p;
+      })
+    );
+
+    fetch(`/api/products/${productId}/stock`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ variantId, newStock: Math.max(0, newStock) })
+    }).catch(err => console.error('Failed to adjust variant stock in Neon DB:', err));
   };
 
   const deleteProduct = (id: string) => {
@@ -415,6 +726,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch(`/api/products/${id}`, {
       method: 'DELETE',
+      headers: authHeaders(),
     }).catch(err => console.error('Failed to delete product from Neon DB:', err));
   };
 
@@ -437,7 +749,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch('/api/payment-methods', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(newMethod),
     }).catch(err => console.error('Failed to sync payment method:', err));
   };
@@ -451,7 +763,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch(`/api/payment-methods/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(updates),
     }).catch(err => console.error('Failed to update payment method:', err));
   };
@@ -465,17 +777,35 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch(`/api/payment-methods/${id}`, {
       method: 'DELETE',
+      headers: authHeaders(),
     }).catch(err => console.error('Failed to delete payment method:', err));
   };
 
-  const deductStock = (items: { productId: string; quantity: number }[]) => {
+  // Deduct stock for transactions
+  const deductStock = (items: { productId: string; quantity: number; selectedColor?: string; selectedSize?: string }[]) => {
     setProducts(prev =>
       prev.map(prod => {
-        const bought = items.find(i => i.productId === prod.id);
-        if (bought) {
-          return { ...prod, stock: Math.max(0, prod.stock - bought.quantity) };
+        const matchingItems = items.filter(i => i.productId === prod.id);
+        if (matchingItems.length === 0) return prod;
+
+        let updatedVars = prod.variants ? [...prod.variants] : [];
+        for (const it of matchingItems) {
+          if (updatedVars.length > 0 && (it.selectedColor || it.selectedSize)) {
+            updatedVars = updatedVars.map(v => {
+              const matchC = !it.selectedColor || v.color.toLowerCase() === it.selectedColor.toLowerCase();
+              const matchS = !it.selectedSize || v.size.toLowerCase() === it.selectedSize.toLowerCase();
+              if (matchC && matchS) {
+                return { ...v, stock: Math.max(0, v.stock - it.quantity) };
+              }
+              return v;
+            });
+          }
         }
-        return prod;
+        const totalStock = updatedVars.length > 0 
+          ? updatedVars.reduce((sum, v) => sum + v.stock, 0)
+          : Math.max(0, prod.stock - matchingItems.reduce((sum, it) => sum + it.quantity, 0));
+
+        return { ...prod, stock: totalStock, variants: updatedVars };
       })
     );
   };
@@ -487,7 +817,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return `INV/${dateStr}/${rand}`;
   };
 
-  // Cash payment creation — now accepts method name for flexibility
+  // Cash payment creation
   const createCashTransaction = (cashGiven: number, methodName: string = 'Tunai'): Transaction => {
     const items = cart.map(item => ({
       productId: item.product.id,
@@ -498,6 +828,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subtotal: item.product.price * item.quantity,
       selectedColor: item.selectedColor,
       selectedSize: item.selectedSize,
+      variantId: item.variantId,
     }));
 
     const changeAmount = Math.max(0, cashGiven - cartTotal);
@@ -505,7 +836,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `TRX-${Date.now()}`,
       invoiceNumber: generateInvoiceNumber(),
       date: new Date().toISOString(),
-      cashierName: cashier.name,
+      cashierName: currentUser?.name || cashier.name,
       items,
       subtotal: cartSubtotal,
       tax: 0,
@@ -526,14 +857,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch('/api/transactions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(newTx),
     }).catch(err => console.error('Failed to save transaction to Neon DB:', err));
 
     return newTx;
   };
 
-  // Transfer payment creation — now accepts method name
+  // Transfer payment creation
   const createTransferTransaction = (
     methodName: string,
     transferBank: string,
@@ -549,6 +880,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subtotal: item.product.price * item.quantity,
       selectedColor: item.selectedColor,
       selectedSize: item.selectedSize,
+      variantId: item.variantId,
     }));
 
     const now = new Date().toISOString();
@@ -556,7 +888,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `TRX-${Date.now()}`,
       invoiceNumber: generateInvoiceNumber(),
       date: now,
-      cashierName: cashier.name,
+      cashierName: currentUser?.name || cashier.name,
       items,
       subtotal: cartSubtotal,
       tax: 0,
@@ -569,7 +901,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       transferProofUrl: proofUrl,
       transferProofVerified: isConfirmedDirectly,
       transferConfirmedAt: isConfirmedDirectly ? now : undefined,
-      transferConfirmedBy: isConfirmedDirectly ? cashier.name : undefined,
+      transferConfirmedBy: isConfirmedDirectly ? (currentUser?.name || cashier.name) : undefined,
     };
 
     deductStock(items);
@@ -583,7 +915,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch('/api/transactions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(newTx),
     }).catch(err => console.error('Failed to save transfer transaction to Neon DB:', err));
 
@@ -600,7 +932,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: 'LUNAS',
             transferProofVerified: true,
             transferConfirmedAt: now,
-            transferConfirmedBy: cashier.name,
+            transferConfirmedBy: currentUser?.name || cashier.name,
           };
         }
         return tx;
@@ -609,8 +941,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch(`/api/transactions/${transactionId}/confirm`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirmedBy: cashier.name }),
+      headers: authHeaders(),
+      body: JSON.stringify({ confirmedBy: currentUser?.name || cashier.name }),
     }).catch(err => console.error('Failed to confirm transaction in Neon DB:', err));
   };
 
@@ -620,7 +952,24 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (tx.id === transactionId) {
           tx.items.forEach(it => {
             setProducts(prods =>
-              prods.map(p => (p.id === it.productId ? { ...p, stock: p.stock + it.quantity } : p))
+              prods.map(p => {
+                if (p.id === it.productId) {
+                  let vars = p.variants ? [...p.variants] : [];
+                  if (vars.length > 0 && (it.selectedColor || it.selectedSize)) {
+                    vars = vars.map(v => {
+                      const matchC = !it.selectedColor || v.color.toLowerCase() === it.selectedColor.toLowerCase();
+                      const matchS = !it.selectedSize || v.size.toLowerCase() === it.selectedSize.toLowerCase();
+                      if (matchC && matchS) {
+                        return { ...v, stock: v.stock + it.quantity };
+                      }
+                      return v;
+                    });
+                  }
+                  const newTotal = vars.length > 0 ? vars.reduce((s, v) => s + v.stock, 0) : p.stock + it.quantity;
+                  return { ...p, stock: newTotal, variants: vars };
+                }
+                return p;
+              })
             );
           });
           return { ...tx, status: 'BATAL' };
@@ -631,6 +980,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetch(`/api/transactions/${transactionId}/cancel`, {
       method: 'PATCH',
+      headers: authHeaders(),
     }).catch(err => console.error('Failed to cancel transaction in Neon DB:', err));
   };
 
@@ -651,16 +1001,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return saved;
       }
     }
-    // Fallback to legacy pos_pin
-    const legacy = localStorage.getItem('pos_pin');
-    if (legacy) {
-      try {
-        return atob(legacy);
-      } catch {
-        return legacy;
-      }
-    }
-    return '123456';
+    return role === 'super_admin' ? 'admin123' : '123456';
   };
 
   const verifyPassword = (role: UserRole, pass: string): boolean => {
@@ -677,10 +1018,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const key = role === 'super_admin' ? 'pos_admin_pin' : 'pos_kasir_pin';
     localStorage.setItem(key, btoa(newPass.trim()));
-    // Also sync pos_pin if super_admin for backwards compatibility
-    if (role === 'super_admin') {
-      localStorage.setItem('pos_pin', btoa(newPass.trim()));
-    }
     return { success: true, message: 'Kata sandi berhasil diperbarui!' };
   };
 
@@ -713,11 +1050,26 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeTab,
         setActiveTab,
         isDbConnected,
+        authToken,
+        currentUser,
+        login,
+        logout,
+        isSuperAdmin,
+        switchRole,
+        users,
+        fetchUsers,
+        createUser,
+        updateUser,
+        deleteUser,
+        storeSettings,
+        updateStoreSettings,
         products,
         addProduct,
         updateProduct,
         deleteProduct,
         findProductByBarcode,
+        adjustStock,
+        adjustVariantStock,
         cart,
         addToCart,
         updateCartItemQty,
@@ -749,8 +1101,6 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsCheckoutOpen,
         cashier,
         updateCashier,
-        isSuperAdmin,
-        switchRole,
         isProfileModalOpen,
         setIsProfileModalOpen,
         changePassword,

@@ -1,4 +1,4 @@
-import { Product, Transaction, CashierProfile, PaymentMethodConfig, UserRole } from '../types';
+import { Product, Transaction, CashierProfile, PaymentMethodConfig, UserRole, StoreSettings } from '../types';
 
 export const SUPER_ADMIN_PROFILE: CashierProfile = {
   id: 'ADM-001',
@@ -20,6 +20,15 @@ export const INITIAL_CASHIER: CashierProfile = {
   outletPhone: '021-5550192',
 };
 
+export const INITIAL_SETTINGS: StoreSettings = {
+  id: 'SET-001',
+  storeName: 'ARFA FASHION',
+  storeAddress: 'Jl. Merdeka Raya No. 45, Jakarta Pusat',
+  storePhone: '021-5550192',
+  minStockAlert: 5,
+  receiptFooter: 'Terima kasih telah berbelanja di ARFA FASHION!'
+};
+
 export const AVAILABLE_ROLES: {
   role: UserRole;
   name: string;
@@ -31,19 +40,45 @@ export const AVAILABLE_ROLES: {
     role: 'super_admin',
     name: 'Super Admin',
     badge: '👑 Super Admin',
-    tagline: 'Full Access (Kelola Produk & Metode)',
-    description: 'Bisa tambah, edit, dan hapus produk serta kelola metode pembayaran.',
+    tagline: 'Full Access (Kelola Toko & Kasir)',
+    description: 'Bisa mengelola produk, stok, laporan, pengguna, metode pembayaran, dan pengaturan.',
   },
   {
     role: 'kasir',
     name: 'Kasir',
     badge: '👤 Kasir',
-    tagline: 'View Only (Katalog & Metode)',
-    description: 'Bisa memproses transaksi kasir, namun hanya bisa melihat katalog produk dan metode pembayaran.',
+    tagline: 'Operasional Kasir',
+    description: 'Bisa melayani transaksi kasir, memindai barcode, dan melihat riwayat penjualan.',
   },
 ];
 
-export const INITIAL_PRODUCTS: Product[] = [
+const makeVariants = (id: string, colors: string[], sizes: string[], totalStock: number) => {
+  const combos: { color: string; size: string }[] = [];
+  for (const c of colors) {
+    for (const s of sizes) {
+      combos.push({ color: c, size: s });
+    }
+  }
+  if (combos.length === 0) return [];
+  const perVar = Math.max(1, Math.floor(totalStock / combos.length));
+  let allocated = 0;
+  return combos.map((cb, idx) => {
+    const isLast = idx === combos.length - 1;
+    const stock = isLast ? Math.max(0, totalStock - allocated) : perVar;
+    allocated += stock;
+    const cleanColor = cb.color.replace(/\s+/g, '').slice(0, 3).toUpperCase();
+    const cleanSize = cb.size.replace(/\s+/g, '').toUpperCase();
+    return {
+      id: `${id}-VAR-${idx + 1}`,
+      color: cb.color,
+      size: cb.size,
+      stock,
+      sku: `${id.replace('PRD-', 'ARF-')}-${cleanColor}-${cleanSize}`
+    };
+  });
+};
+
+const RAW_PRODUCTS: Omit<Product, 'variants'>[] = [
   {
     id: 'PRD-001',
     name: 'Atasan Stripe Polo Kerah Jeans',
@@ -240,6 +275,11 @@ export const INITIAL_PRODUCTS: Product[] = [
     sizes: ['S', 'M', 'L', 'XL', 'XXL'],
   }
 ];
+
+export const INITIAL_PRODUCTS: Product[] = RAW_PRODUCTS.map(p => ({
+  ...p,
+  variants: makeVariants(p.id, p.colors || [], p.sizes || [], p.stock)
+}));
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [
   {

@@ -26,7 +26,9 @@ export const DashboardPage: React.FC = () => {
     cancelTransaction, 
     setActiveTab, 
     updateProduct,
-    isSuperAdmin
+    isSuperAdmin,
+    currentUser,
+    cashier
   } = usePOS();
 
   const [previewProof, setPreviewProof] = useState<string | null>(null);
@@ -39,28 +41,45 @@ export const DashboardPage: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col overflow-y-auto bg-slate-100 p-4 md:p-6 space-y-4 md:space-y-6">
       
-      {/* Top Banner with Quick POS Jump */}
-      <div className="bg-slate-900 text-white rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-800">
+      {/* Top Banner with Quick Role Context & Jump */}
+      <div className="bg-slate-900 text-white rounded-2xl md:rounded-3xl p-5 md:p-6 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4 border border-slate-800">
         <div>
-          <span className="text-brand-400 text-xs font-mono font-bold uppercase tracking-wider">
-            Terminal Kasir Aktif
+          <span className={`text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
+            isSuperAdmin ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-brand-500/20 text-brand-300 border border-brand-500/30'
+          }`}>
+            {isSuperAdmin ? 'Portal Administrator • Kontrol Penuh' : `Terminal Kasir Aktif • ${cashier.shift}`}
           </span>
-          <h1 className="text-xl md:text-2xl font-black tracking-tight mt-1">
-            Dashboard Operasional Kasir
+          <h1 className="text-xl md:text-2xl font-black tracking-tight mt-1.5">
+            {isSuperAdmin 
+              ? 'Ringkasan Bisnis & Operasional Toko' 
+              : `Selamat Bertugas, ${currentUser?.name || cashier.name}!`}
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Pantau ringkasan shift hari ini, notifikasi antrean verifikasi transfer, dan kontrol stok.
+          <p className="text-xs text-slate-400 mt-1 max-w-xl">
+            {isSuperAdmin
+              ? 'Pantau penjualan shift, pantau antrean verifikasi transfer, kontrol stok varian produk, dan tinjau laporan toko ARFA FASHION.'
+              : 'Layani pelanggan dengan cepat, periksa bukti transfer pelanggan, dan cetak struk pembayaran dengan akurat.'}
           </p>
         </div>
 
-        <button
-          onClick={() => setActiveTab('transaksi')}
-          className="py-3 px-5 bg-brand-600 hover:bg-brand-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-brand-600/30 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-        >
-          <ScanLine className="w-4 h-4" />
-          <span>Buka POS Transaksi (F1)</span>
-          <ArrowUpRight className="w-4 h-4 ml-0.5" />
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setActiveTab('transaksi')}
+            className="py-3 px-5 bg-brand-600 hover:bg-brand-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-brand-600/30 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          >
+            <ScanLine className="w-4 h-4" />
+            <span>Buka Kasir POS (F2)</span>
+            <ArrowUpRight className="w-4 h-4 ml-0.5" />
+          </button>
+
+          {isSuperAdmin && (
+            <button
+              onClick={() => setActiveTab('stok')}
+              className="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+            >
+              <span>Kelola Stok (F4)</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 4 Stat Cards */}
