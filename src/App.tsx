@@ -45,61 +45,54 @@ export const App: React.FC = () => {
     return path.startsWith('/admin') ? 'admin' : 'kasir';
   });
 
-  // Handle URL sync and route guard
+  // 1. Initial mount & browser Popstate (Back/Forward) listener ONLY
   useEffect(() => {
-    const handleLocation = () => {
+    const parseUrlTab = () => {
       const path = window.location.pathname.toLowerCase();
 
       if (!isLoggedIn) {
-        if (path.startsWith('/admin')) {
-          setLoginPortal('admin');
-        } else {
-          setLoginPortal('kasir');
-        }
+        setLoginPortal(path.startsWith('/admin') ? 'admin' : 'kasir');
         return;
       }
 
-      // User IS logged in: enforce role access
-      if (!isSuperAdmin) {
-        // KASIR ROUTE GUARD:
-        // Kasir cannot visit /admin/* or admin tabs
-        if (path.startsWith('/admin')) {
-          console.warn('Access denied: Kasir attempted to visit admin route');
-          window.history.replaceState(null, '', '/kasir/dashboard');
-          setActiveTab('dashboard');
-          return;
-        }
+      // Extract tab name from pathname safely (supports /admin/stok, /kasir/transaksi, etc.)
+      const segments = path.split('/').filter(Boolean);
+      let tabFromUrl: string | undefined;
 
-        // Allowed tabs for Kasir
-        const kasirAllowed: ActiveTab[] = ['dashboard', 'transaksi', 'riwayat'];
-        const matchedTab = path.replace('/kasir/', '') as ActiveTab;
+      if (segments.includes('admin')) {
+        const idx = segments.indexOf('admin');
+        tabFromUrl = segments[idx + 1];
+      } else if (segments.includes('kasir')) {
+        const idx = segments.indexOf('kasir');
+        tabFromUrl = segments[idx + 1];
+      }
 
-        if (kasirAllowed.includes(matchedTab)) {
-          if (activeTab !== matchedTab) setActiveTab(matchedTab);
-        } else if (path.startsWith('/kasir') && matchedTab) {
-          // If trying to access admin tab like /kasir/stok, reset to dashboard
-          window.history.replaceState(null, '', '/kasir/dashboard');
-          setActiveTab('dashboard');
-        }
-      } else {
-        // ADMIN ROUTE:
-        const matchedTab = (path.replace('/admin/', '') || path.replace('/kasir/', '')) as ActiveTab;
-        const adminAllowed: ActiveTab[] = [
-          'dashboard', 'transaksi', 'produk', 'stok', 'riwayat',
-          'laporan', 'pengguna', 'metode', 'pengaturan'
-        ];
-        if (adminAllowed.includes(matchedTab)) {
-          if (activeTab !== matchedTab) setActiveTab(matchedTab);
+      const validTabs: ActiveTab[] = [
+        'dashboard', 'transaksi', 'produk', 'stok', 'riwayat',
+        'laporan', 'pengguna', 'metode', 'pengaturan'
+      ];
+
+      if (tabFromUrl && validTabs.includes(tabFromUrl as ActiveTab)) {
+        const targetTab = tabFromUrl as ActiveTab;
+        if (!isSuperAdmin) {
+          const kasirAllowed: ActiveTab[] = ['dashboard', 'transaksi', 'riwayat'];
+          if (kasirAllowed.includes(targetTab)) {
+            setActiveTab(targetTab);
+          } else {
+            setActiveTab('dashboard');
+          }
+        } else {
+          setActiveTab(targetTab);
         }
       }
     };
 
-    handleLocation();
-    window.addEventListener('popstate', handleLocation);
-    return () => window.removeEventListener('popstate', handleLocation);
-  }, [isLoggedIn, isSuperAdmin, activeTab, setActiveTab]);
+    parseUrlTab();
+    window.addEventListener('popstate', parseUrlTab);
+    return () => window.removeEventListener('popstate', parseUrlTab);
+  }, [isLoggedIn, isSuperAdmin, setActiveTab]);
 
-  // Sync browser URL whenever activeTab changes
+  // 2. Unidirectional URL Sync (activeTab -> URL path only)
   useEffect(() => {
     if (!isLoggedIn) return;
 
@@ -110,11 +103,11 @@ export const App: React.FC = () => {
     }
   }, [activeTab, isLoggedIn, isSuperAdmin]);
 
-  // Enforce Kasir cannot stay on admin tabs
+  // 3. Role Guard: Enforce Kasir cannot stay on admin tabs
   useEffect(() => {
     if (isLoggedIn && !isSuperAdmin) {
-      const adminTabs: ActiveTab[] = ['produk', 'stok', 'laporan', 'pengguna', 'metode', 'pengaturan'];
-      if (adminTabs.includes(activeTab)) {
+      const kasirAllowed: ActiveTab[] = ['dashboard', 'transaksi', 'riwayat'];
+      if (!kasirAllowed.includes(activeTab)) {
         setActiveTab('dashboard');
       }
     }
