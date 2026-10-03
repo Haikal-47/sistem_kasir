@@ -481,17 +481,18 @@ export const ProfileModal: React.FC = () => {
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              const nextRole = isSuperAdmin ? 'kasir' : 'super_admin';
-              switchRole(nextRole);
-            }}
-            className="text-[11px] font-bold text-brand-700 hover:text-brand-900 flex items-center gap-1 hover:underline"
-          >
-            <span>Beralih ke {isSuperAdmin ? 'Kasir' : 'Super Admin'}</span>
-            <ArrowRight className="w-3 h-3" />
-          </button>
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                switchRole('kasir');
+              }}
+              className="text-[11px] font-bold text-brand-700 hover:text-brand-900 flex items-center gap-1 hover:underline"
+            >
+              <span>Beralih ke Kasir</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          )}
         </div>
       </div>
     </div>

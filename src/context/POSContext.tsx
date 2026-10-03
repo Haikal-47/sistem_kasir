@@ -487,6 +487,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const switchRole = (newRole: UserRole) => {
+    if (newRole === 'super_admin' && cashier.role !== 'super_admin') {
+      console.warn('Unauthorized role switch attempt to super_admin rejected.');
+      return;
+    }
     if (newRole === 'super_admin') {
       const updated: CashierProfile = {
         ...SUPER_ADMIN_PROFILE,

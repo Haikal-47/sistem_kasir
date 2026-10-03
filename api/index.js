@@ -302,9 +302,9 @@ router.post('/attendance/check-in', async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO cashier_attendances (id, user_id, cashier_name, date, check_in, opening_cash, status)
-       VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'Asia/Jakarta', $5, 'working')
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, $5, 'working')
        ON CONFLICT (user_id, date) DO UPDATE
-         SET status = 'working', check_in = NOW() AT TIME ZONE 'Asia/Jakarta'
+         SET status = 'working', check_in = CURRENT_TIMESTAMP
        RETURNING *`,
       [id, userId, cashierName, today, OPENING_CASH]
     );
@@ -400,7 +400,7 @@ router.post('/attendance/check-out', async (req, res) => {
 
     const updateResult = await pool.query(
       `UPDATE cashier_attendances
-       SET check_out = NOW() AT TIME ZONE 'Asia/Jakarta',
+       SET check_out = CURRENT_TIMESTAMP,
            expected_cash = $1,
            actual_cash = $2,
            cash_difference = $3,

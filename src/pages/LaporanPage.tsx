@@ -175,8 +175,8 @@ export const LaporanPage: React.FC = () => {
     const rows = attendances.map(a => [
       a.date,
       a.cashierName,
-      a.checkIn ? new Date(a.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-',
-      a.checkOut ? new Date(a.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-',
+      a.checkIn ? new Date(a.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '-',
+      a.checkOut ? new Date(a.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '-',
       a.openingCash,
       a.stats?.cashSales ?? 0,
       a.expectedCash ?? (a.stats?.expectedCash ?? ''),
@@ -535,14 +535,14 @@ export const LaporanPage: React.FC = () => {
                             <td className="px-4 py-3.5">
                               <div className="flex items-center gap-1.5 text-emerald-700 font-mono font-bold">
                                 <LogIn className="w-3 h-3" />
-                                {att.checkIn ? new Date(att.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                {att.checkIn ? new Date(att.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '-'}
                               </div>
                             </td>
                             <td className="px-4 py-3.5">
                               {att.checkOut ? (
                                 <div className="flex items-center gap-1.5 text-rose-600 font-mono font-bold">
                                   <LogOut className="w-3 h-3" />
-                                  {new Date(att.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                  {new Date(att.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })}
                                 </div>
                               ) : (
                                 <span className="text-slate-400 italic">-</span>

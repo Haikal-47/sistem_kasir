@@ -120,9 +120,9 @@ export const CashClosingModal: React.FC<CashClosingModalProps> = ({ isOpen, onCl
     year: 'numeric'
   });
   const checkInFormatted = attendance?.checkIn 
-    ? new Date(attendance.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+    ? new Date(attendance.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
     : '08:00';
-  const nowTimeFormatted = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  const nowTimeFormatted = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
   const cashierName = currentUser?.name || cashier.name || 'Gusti';
 
   const handleQuickPreset = (amount: number) => {

@@ -99,10 +99,10 @@ export const DashboardPage: React.FC = () => {
 
   const cashierName = currentUser?.name || cashier.name || 'Gusti';
   const checkInTimeFormatted = attendance?.checkIn
-    ? new Date(attendance.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+    ? new Date(attendance.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
     : '08:00';
   const checkOutTimeFormatted = attendance?.checkOut
-    ? new Date(attendance.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+    ? new Date(attendance.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
     : '-';
 
   return (
@@ -251,7 +251,7 @@ export const DashboardPage: React.FC = () => {
                     <span className="text-xs bg-emerald-200/80 text-emerald-900 px-2.5 py-0.5 rounded-md font-bold">Kasir: Gusti</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-emerald-800 mt-1 font-medium">
-                    <span>Jam Masuk: <strong className="font-mono">{todaySummary.checkIn ? new Date(todaySummary.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'} WIB</strong></span>
+                    <span>Jam Masuk: <strong className="font-mono">{todaySummary.checkIn ? new Date(todaySummary.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '-'} WIB</strong></span>
                     <span>Modal: <strong className="font-mono">{formatRupiah(todaySummary.openingCash || 500000)}</strong></span>
                     <span>Penjualan Hari Ini: <strong className="font-mono text-emerald-950 font-black">{formatRupiah(todaySummary.revenueToday || 0)}</strong></span>
                   </div>
@@ -275,8 +275,8 @@ export const DashboardPage: React.FC = () => {
                     <span className="text-[11px] text-slate-500">Tutup Kas Selesai</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 mt-1 font-medium">
-                    <span>Jam Masuk: <strong className="font-mono">{todaySummary.checkIn ? new Date(todaySummary.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'}</strong></span>
-                    <span>Jam Pulang: <strong className="font-mono">{todaySummary.checkOut ? new Date(todaySummary.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'}</strong></span>
+                    <span>Jam Masuk: <strong className="font-mono">{todaySummary.checkIn ? new Date(todaySummary.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '-'} WIB</strong></span>
+                    <span>Jam Pulang: <strong className="font-mono">{todaySummary.checkOut ? new Date(todaySummary.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '-'} WIB</strong></span>
                     <span>Kas Aktual: <strong className="font-mono text-slate-900 font-bold">{formatRupiah(todaySummary.actualCash || 0)}</strong></span>
                     <span>
                       Selisih:{' '}
