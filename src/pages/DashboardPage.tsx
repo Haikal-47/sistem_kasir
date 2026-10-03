@@ -19,7 +19,9 @@ import {
   LogOut,
   UserCheck,
   Sparkles,
-  Calendar
+  Calendar,
+  RotateCcw,
+  Trash2
 } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
@@ -38,31 +40,37 @@ export const DashboardPage: React.FC = () => {
     setIsCheckInModalOpen,
     setIsCheckOutModalOpen,
     todaySummary,
-    fetchTodaySummary
+    fetchTodaySummary,
+    refreshAttendance,
+    resetKasirData
   } = usePOS();
 
   const [previewProof, setPreviewProof] = useState<string | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   useEffect(() => {
     fetchTodaySummary();
-    if (!isSuperAdmin) return;
+    refreshAttendance();
 
-    // Auto-refresh saat admin kembali fokus ke tab ini
+    // Auto-refresh saat kembali fokus ke tab ini
     const handleFocus = () => {
       fetchTodaySummary();
+      refreshAttendance();
     };
     window.addEventListener('focus', handleFocus);
 
-    // Polling setiap 10 detik untuk update status kasir secara cepat di dashboard admin
+    // Polling setiap 10 detik untuk update status (admin dan kasir)
     const interval = setInterval(() => {
       fetchTodaySummary();
+      refreshAttendance();
     }, 10000);
 
     return () => {
       window.removeEventListener('focus', handleFocus);
       clearInterval(interval);
     };
-  }, [fetchTodaySummary, isSuperAdmin]);
+  }, [fetchTodaySummary, refreshAttendance]);
 
 
   // Transaksi yang ditampilkan:
@@ -291,7 +299,34 @@ export const DashboardPage: React.FC = () => {
 
       {/* ── KASIR GUSTI: ATTENDANCE STATUS CARD (Prompt Section 8 & 12) ── */}
       {!isSuperAdmin && (
-        <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6 border border-slate-200 shadow-xs">
+        <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6 border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-brand-600 text-white flex items-center justify-center font-bold text-xs">
+                POS
+              </div>
+              <div>
+                <h2 className="text-base font-black text-slate-900 tracking-tight">
+                  STATUS SHIFT KASIR
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Monitoring absensi dan terminal kasir {cashierName}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                refreshAttendance();
+                fetchTodaySummary();
+              }}
+              className="text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+              title="Sinkronkan status dengan server"
+            >
+              <span>↻</span>
+              <span>Refresh Status</span>
+            </button>
+          </div>
+
           {attendanceStatus === 'not_started' && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-amber-50/70 border-2 border-dashed border-amber-300">
               <div className="flex items-center gap-3">
@@ -378,6 +413,19 @@ export const DashboardPage: React.FC = () => {
                     Hari kerja Anda hari ini sudah selesai. Transaksi kasir ditutup. Terima kasih atas kerja keras Anda hari ini!
                   </p>
                 </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('pos_attendance_today');
+                    window.location.reload();
+                  }}
+                  className="py-2.5 px-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5"
+                  title="Mulai sesi hari kerja baru"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Mulai Shift Baru</span>
+                </button>
               </div>
             </div>
           )}

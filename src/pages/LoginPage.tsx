@@ -13,7 +13,7 @@ interface LoginPageProps {
 const DEFAULT_PIN_B64 = btoa('123456');
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const { cashier, switchRole, updateCashier } = usePOS();
+  const { cashier, switchRole, updateCashier, login: apiLogin } = usePOS();
 
   const [selectedRole, setSelectedRole] = useState<UserRole>(() => {
     return cashier.role || 'kasir';
@@ -51,7 +51,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     return localStorage.getItem('pos_kasir_pin') || localStorage.getItem('pos_pin') || DEFAULT_PIN_B64;
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError('Masukkan nama kasir/admin terlebih dahulu.');
@@ -67,21 +67,47 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
     setError('');
 
-    // Simulate brief auth delay for realism
+    // Coba login via backend API dulu untuk mendapat JWT token
+    // Gunakan apiLogin dari POSContext agar authToken state ter-update dengan benar
+    const defaultUsername = selectedRole === 'super_admin' ? 'admin' : name.trim().toLowerCase().replace(/\s+/g, '');
+    try {
+      const result = await apiLogin(defaultUsername, pin.trim(), selectedRole === 'super_admin' ? 'admin' : 'kasir');
+      if (result.success) {
+        // apiLogin sudah set authToken, currentUser, sessionStorage semua
+        switchRole(selectedRole);
+        updateCashier({ name: name.trim() });
+        // Simpan PIN lokal juga sebagai fallback offline
+        const key = selectedRole === 'super_admin' ? 'pos_admin_pin' : 'pos_kasir_pin';
+        localStorage.setItem(key, btoa(pin.trim()));
+        onLoginSuccess();
+        return;
+      }
+      // Jika error bukan network error — credential salah, jangan fallback ke PIN lokal
+      if (result.error && !result.error.toLowerCase().includes('fetch') && !result.error.toLowerCase().includes('network') && !result.error.toLowerCase().includes('failed to fetch')) {
+        setIsShaking(true);
+        setError(result.error || 'Username atau PIN salah. Coba lagi.');
+        setPin('');
+        setIsLoading(false);
+        pinRef.current?.focus();
+        setTimeout(() => setIsShaking(false), 600);
+        return;
+      }
+    } catch {
+      // Network error / API tidak tersedia — fallback ke PIN lokal
+      console.warn('API login gagal, mencoba PIN lokal...');
+    }
+
+
+    // Fallback: verifikasi PIN lokal (untuk mode offline / development)
     setTimeout(() => {
       const storedPin = getStoredPin();
       const inputPinB64 = btoa(pin);
 
       if (inputPinB64 === storedPin) {
-        // Apply chosen role
         switchRole(selectedRole);
-
-        // Update cashier profile name
         if (name.trim()) {
           updateCashier({ name: name.trim() });
         }
-
-        // Save login session
         sessionStorage.setItem('pos_logged_in', 'true');
         sessionStorage.setItem('pos_login_name', name.trim());
         sessionStorage.setItem('pos_role', selectedRole);
@@ -94,7 +120,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         pinRef.current?.focus();
         setTimeout(() => setIsShaking(false), 600);
       }
-    }, 400);
+    }, 200);
   };
 
   const handlePinKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

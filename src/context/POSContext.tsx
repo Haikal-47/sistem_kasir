@@ -124,6 +124,7 @@ interface POSContextType {
   // Audio & Notification
   playBeep: () => void;
   resetToDemoData: () => void;
+  resetKasirData: () => void;
 }
 
 const POSContext = createContext<POSContextType | undefined>(undefined);
@@ -643,6 +644,13 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (Array.isArray(txData)) {
             setTransactions(txData);
             localStorage.setItem('pos_transactions', JSON.stringify(txData));
+            // Jika transaksi di DB 0 (baru di-reset), bersihkan juga keranjang dan cache absensi lama
+            if (txData.length === 0) {
+              setCart([]);
+              setHeldCart(null);
+              localStorage.removeItem('pos_cart');
+              localStorage.removeItem('pos_held_cart');
+            }
           }
           if (cashierRes.ok) {
             const cashierData = await cashierRes.json();
@@ -663,6 +671,34 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
           setIsDbConnected(true);
+
+          // Sinkronisasi status absensi kasir dengan server
+          const token = sessionStorage.getItem('pos_auth_token');
+          if (token) {
+            try {
+              const attRes = await fetch('/api/attendance/today', {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (attRes.ok) {
+                const attData = await attRes.json();
+                if (attData.status === 'not_started' || !attData.attendance) {
+                  setAttendance(null);
+                  setAttendanceStatus('not_started');
+                  localStorage.removeItem('pos_attendance_today');
+                } else {
+                  setAttendance(attData.attendance);
+                  setAttendanceStatus(attData.status);
+                  localStorage.setItem('pos_attendance_today', JSON.stringify(attData.attendance));
+                }
+              }
+            } catch (e) {
+              console.warn(e);
+            }
+          } else if (txData.length === 0) {
+            setAttendance(null);
+            setAttendanceStatus('not_started');
+            localStorage.removeItem('pos_attendance_today');
+          }
           // Attendance dipanggil dari useEffect yang watch authToken, bukan di sini
         }
       } catch (err) {
@@ -1300,6 +1336,21 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setHeldCart(null);
   };
 
+  // Reset semua data kasir saja (riwayat transaksi lokal, cart, absensi, sesi) tanpa hapus produk
+  const resetKasirData = () => {
+    localStorage.removeItem('pos_transactions');
+    localStorage.removeItem('pos_cart');
+    localStorage.removeItem('pos_held_cart');
+    localStorage.removeItem('pos_attendance_today');
+    localStorage.removeItem('pos_session_code');
+    setTransactions([]);
+    setCart([]);
+    setCartDiscount(0);
+    setHeldCart(null);
+    setAttendance(null);
+    setAttendanceStatus('not_started');
+  };
+
   return (
     <POSContext.Provider
       value={{
@@ -1364,6 +1415,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getRolePassword,
         playBeep,
         resetToDemoData,
+        resetKasirData,
         attendance,
         attendanceStatus,
         isAttendanceLoading,
