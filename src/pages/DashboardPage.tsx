@@ -46,11 +46,22 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     fetchTodaySummary();
     if (!isSuperAdmin) return;
-    // Polling setiap 30 detik untuk update status kasir di dashboard admin
+
+    // Auto-refresh saat admin kembali fokus ke tab ini
+    const handleFocus = () => {
+      fetchTodaySummary();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // Polling setiap 10 detik untuk update status kasir secara cepat di dashboard admin
     const interval = setInterval(() => {
       fetchTodaySummary();
-    }, 30000);
-    return () => clearInterval(interval);
+    }, 10000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
   }, [fetchTodaySummary, isSuperAdmin]);
 
 
