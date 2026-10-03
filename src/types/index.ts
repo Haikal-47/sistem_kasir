@@ -86,6 +86,37 @@ export interface Transaction {
   transferConfirmedAt?: string;
   transferConfirmedBy?: string;
   customerNote?: string;
+  customerName?: string;
+  customerPhone?: string;
+  attendanceId?: string;
+}
+
+export type AttendanceStatus = 'not_started' | 'working' | 'completed';
+
+export interface AttendanceStats {
+  totalTransactions: number;
+  totalRevenue: number;
+  cashSales: number;
+  qrisSales: number;
+  transferSales: number;
+  otherSales: number;
+  expectedCash: number;
+}
+
+export interface CashierAttendance {
+  id: string;
+  userId: string;
+  cashierName: string;
+  date: string;
+  checkIn: string;
+  checkOut?: string | null;
+  openingCash: number;
+  expectedCash?: number | null;
+  actualCash?: number | null;
+  cashDifference?: number | null;
+  status: AttendanceStatus;
+  note?: string | null;
+  stats?: AttendanceStats;
 }
 
 export type UserRole = 'super_admin' | 'kasir';

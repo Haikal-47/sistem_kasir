@@ -11,13 +11,15 @@ export const ReceiptModal: React.FC = () => {
 
   // Editable customer info
   const [customerName, setCustomerName] = useState<string>('');
+  const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerAddress, setCustomerAddress] = useState<string>('');
   const [isEditingInfo, setIsEditingInfo] = useState<boolean>(false);
 
   // Sync customer info when selectedReceipt changes
   React.useEffect(() => {
     if (selectedReceipt) {
-      setCustomerName(selectedReceipt.customerNote || 'Fransiska');
+      setCustomerName(selectedReceipt.customerName || selectedReceipt.customerNote || '');
+      setCustomerPhone(selectedReceipt.customerPhone || '');
       setCustomerAddress('');
       setIsEditingInfo(false);
       setViewMode('invoice');

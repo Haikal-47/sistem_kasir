@@ -14,10 +14,12 @@ import { LaporanPage } from './pages/LaporanPage';
 import { PenggunaPage } from './pages/PenggunaPage';
 import { PengaturanPage } from './pages/PengaturanPage';
 import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
-import { CheckoutModal } from './components/CheckoutModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { PaymentMethodsModal } from './components/PaymentMethodsModal';
 import { ProfileModal } from './components/ProfileModal';
+import { CheckoutModal } from './components/CheckoutModal';
+import { CheckInModal } from './components/CheckInModal';
+import { CashClosingModal } from './components/CashClosingModal';
 import { ActiveTab } from './types';
 
 export const App: React.FC = () => {
@@ -28,7 +30,13 @@ export const App: React.FC = () => {
     setIsPaymentMethodsOpen,
     currentUser,
     isSuperAdmin,
-    logout
+    logout,
+    attendanceStatus,
+    isAttendanceLoading,
+    isCheckInModalOpen,
+    setIsCheckInModalOpen,
+    isCheckOutModalOpen,
+    setIsCheckOutModalOpen,
   } = usePOS();
 
   // Check if browser is opened as dedicated Mobile Handheld Scanner
@@ -112,6 +120,17 @@ export const App: React.FC = () => {
       }
     }
   }, [isLoggedIn, isSuperAdmin, activeTab, setActiveTab]);
+
+  // 4. Kasir Absen Masuk Prompt (Prompt Rule 4: Jika Gusti belum absen masuk, tampilkan MULAI HARI KERJA)
+  useEffect(() => {
+    if (isLoggedIn && !isSuperAdmin) {
+      if (attendanceStatus === 'not_started' && !isAttendanceLoading) {
+        setIsCheckInModalOpen(true);
+      } else if (attendanceStatus === 'working' || attendanceStatus === 'completed') {
+        setIsCheckInModalOpen(false);
+      }
+    }
+  }, [isLoggedIn, isSuperAdmin, attendanceStatus, isAttendanceLoading, setIsCheckInModalOpen]);
 
   const handleLoginSuccess = useCallback(() => {
     setIsLoggedIn(true);
@@ -217,13 +236,21 @@ export const App: React.FC = () => {
       </div>
 
       {/* Modals */}
-      <CheckoutModal />
       <ReceiptModal />
       <PaymentMethodsModal
         isOpen={isPaymentMethodsOpen}
         onClose={() => setIsPaymentMethodsOpen(false)}
       />
       <ProfileModal />
+      <CheckInModal
+        isOpen={isCheckInModalOpen}
+        onClose={() => setIsCheckInModalOpen(false)}
+      />
+      <CheckoutModal />
+      <CashClosingModal
+        isOpen={isCheckOutModalOpen}
+        onClose={() => setIsCheckOutModalOpen(false)}
+      />
     </div>
   );
 };

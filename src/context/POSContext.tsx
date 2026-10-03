@@ -9,7 +9,9 @@ import {
   UserRole,
   UserAccount,
   StoreSettings,
-  ProductVariant
+  ProductVariant,
+  AttendanceStatus,
+  CashierAttendance
 } from '../types';
 import { 
   INITIAL_PRODUCTS, 
@@ -34,6 +36,20 @@ interface POSContextType {
   logout: () => void;
   isSuperAdmin: boolean;
   switchRole: (role: UserRole) => void;
+
+  // Cashier Attendance & Cash Closing (Gusti & Admin)
+  attendance: CashierAttendance | null;
+  attendanceStatus: AttendanceStatus;
+  isAttendanceLoading: boolean;
+  isCheckInModalOpen: boolean;
+  setIsCheckInModalOpen: (open: boolean) => void;
+  isCheckOutModalOpen: boolean;
+  setIsCheckOutModalOpen: (open: boolean) => void;
+  refreshAttendance: () => Promise<void>;
+  checkIn: () => Promise<{ success: boolean; error?: string }>;
+  checkOut: (actualCash: number, note?: string) => Promise<{ success: boolean; error?: string }>;
+  todaySummary: any;
+  fetchTodaySummary: () => Promise<void>;
 
   // User Management (Admin Only)
   users: UserAccount[];
@@ -72,8 +88,8 @@ interface POSContextType {
   
   // Transactions
   transactions: Transaction[];
-  createCashTransaction: (cashGiven: number, methodName: string) => Transaction;
-  createTransferTransaction: (methodName: string, transferBank: string, proofUrl: string, isConfirmedDirectly: boolean) => Transaction;
+  createCashTransaction: (cashGiven: number, methodName: string, customerName?: string, customerPhone?: string) => Transaction;
+  createTransferTransaction: (methodName: string, transferBank: string, proofUrl: string, isConfirmedDirectly: boolean, customerName?: string, customerPhone?: string) => Transaction;
   confirmTransferPayment: (transactionId: string) => void;
   cancelTransaction: (transactionId: string) => void;
   pendingConfirmations: Transaction[];
@@ -198,12 +214,178 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isSuperAdmin = (currentUser?.role === 'super_admin') || (cashier.role === 'super_admin');
 
+  // ── Cashier Attendance State (Prompt Rules 4, 5, 6, 7, 8, 12, 13, 20) ──
+  const [attendance, setAttendance] = useState<CashierAttendance | null>(() => {
+    const saved = localStorage.getItem('pos_attendance_today');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+        if (parsed.date === today) return parsed;
+      } catch (e) { console.error(e); }
+    }
+    return null;
+  });
+
+  const [attendanceStatus, setAttendanceStatus] = useState<AttendanceStatus>(() => {
+    const saved = localStorage.getItem('pos_attendance_today');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+        if (parsed.date === today) return parsed.status || 'not_started';
+      } catch (e) { console.error(e); }
+    }
+    return 'not_started';
+  });
+
+  const [isAttendanceLoading, setIsAttendanceLoading] = useState<boolean>(false);
+  const [isCheckInModalOpen, setIsCheckInModalOpen] = useState<boolean>(false);
+  const [isCheckOutModalOpen, setIsCheckOutModalOpen] = useState<boolean>(false);
+  const [todaySummary, setTodaySummary] = useState<any>(null);
+
   const authHeaders = useCallback(() => {
     return {
       'Content-Type': 'application/json',
       ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
     };
   }, [authToken]);
+
+  const refreshAttendance = useCallback(async () => {
+    try {
+      setIsAttendanceLoading(true);
+      const res = await fetch('/api/attendance/today', {
+        headers: authHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAttendanceStatus(data.status || 'not_started');
+        setAttendance(data.attendance || null);
+        if (data.attendance) {
+          localStorage.setItem('pos_attendance_today', JSON.stringify(data.attendance));
+        } else {
+          localStorage.removeItem('pos_attendance_today');
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch attendance, using local cache:', err);
+      const saved = localStorage.getItem('pos_attendance_today');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+          if (parsed.date === today) {
+            setAttendance(parsed);
+            setAttendanceStatus(parsed.status);
+          } else {
+            setAttendance(null);
+            setAttendanceStatus('not_started');
+          }
+        } catch {
+          setAttendance(null);
+          setAttendanceStatus('not_started');
+        }
+      }
+    } finally {
+      setIsAttendanceLoading(false);
+    }
+  }, [authHeaders]);
+
+  const fetchTodaySummary = useCallback(async () => {
+    try {
+      const res = await fetch('/api/attendance/summary-today', {
+        headers: authHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTodaySummary(data);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch today summary:', err);
+    }
+  }, [authHeaders]);
+
+  const checkIn = async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/attendance/check-in', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Gagal melakukan absen masuk.' };
+      }
+      setAttendance(data.attendance);
+      setAttendanceStatus('working');
+      localStorage.setItem('pos_attendance_today', JSON.stringify(data.attendance));
+      setIsCheckInModalOpen(false);
+      fetchTodaySummary();
+      return { success: true };
+    } catch (err: unknown) {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+      const fallbackAtt: CashierAttendance = {
+        id: `ATT-${Date.now()}`,
+        userId: currentUser?.id || 'USR-KAS-01',
+        cashierName: currentUser?.name || 'Gusti',
+        date: today,
+        checkIn: new Date().toISOString(),
+        openingCash: 500000,
+        expectedCash: 500000,
+        status: 'working'
+      };
+      setAttendance(fallbackAtt);
+      setAttendanceStatus('working');
+      localStorage.setItem('pos_attendance_today', JSON.stringify(fallbackAtt));
+      setIsCheckInModalOpen(false);
+      return { success: true };
+    }
+  };
+
+  const checkOut = async (actualCash: number, note?: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/attendance/check-out', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ actualCash, note })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Gagal melakukan tutup kas harian.' };
+      }
+      setAttendance(data.attendance);
+      setAttendanceStatus('completed');
+      localStorage.setItem('pos_attendance_today', JSON.stringify(data.attendance));
+      setIsCheckOutModalOpen(false);
+      fetchTodaySummary();
+      return { success: true };
+    } catch (err: unknown) {
+      if (attendance) {
+        const openingCash = attendance.openingCash || 500000;
+        const cashSales = attendance.stats?.cashSales || 0;
+        const expectedCash = openingCash + cashSales;
+        const diff = actualCash - expectedCash;
+        if (diff !== 0 && (!note || note.trim().length === 0)) {
+          return { success: false, error: 'Keterangan selisih wajib diisi karena terdapat selisih kas.' };
+        }
+        const updated: CashierAttendance = {
+          ...attendance,
+          checkOut: new Date().toISOString(),
+          expectedCash,
+          actualCash,
+          cashDifference: diff,
+          status: 'completed',
+          note: note || null
+        };
+        setAttendance(updated);
+        setAttendanceStatus('completed');
+        localStorage.setItem('pos_attendance_today', JSON.stringify(updated));
+        setIsCheckOutModalOpen(false);
+        return { success: true };
+      }
+      return { success: false, error: (err as Error).message };
+    }
+  };
 
   // Auth Functions
   const login = async (username: string, pass: string, portal: 'admin' | 'kasir'): Promise<{ success: boolean; error?: string }> => {
@@ -239,6 +421,12 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       setCashier(updatedProfile);
       localStorage.setItem('pos_cashier', JSON.stringify(updatedProfile));
+
+      // Refresh attendance status on login
+      setTimeout(() => {
+        refreshAttendance();
+        fetchTodaySummary();
+      }, 50);
 
       return { success: true };
     } catch (err: unknown) {
@@ -457,6 +645,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
           setIsDbConnected(true);
+          refreshAttendance();
+          fetchTodaySummary();
         }
       } catch (err) {
         console.warn('Backend Neon API not reached, using local fallback:', err);
@@ -465,7 +655,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     loadFromNeonDb();
-  }, []);
+  }, [refreshAttendance, fetchTodaySummary]);
 
   // Fetch users if logged in as Admin
   useEffect(() => {
@@ -473,6 +663,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetchUsers();
     }
   }, [isSuperAdmin, authToken, fetchUsers]);
+
+  // Sync attendance state when logged in as Kasir
+  useEffect(() => {
+    if (authToken && currentUser && currentUser.role !== 'super_admin') {
+      refreshAttendance();
+      fetchTodaySummary();
+    }
+  }, [authToken, currentUser?.id, refreshAttendance, fetchTodaySummary]);
 
   // Sync to localStorage
   useEffect(() => {
@@ -520,7 +718,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const getCartKey = (productId: string, color?: string, size?: string) =>
     `${productId}|${color || ''}|${size || ''}`;
 
-  const addToCart = (product: Product, quantity: number = 1, selectedColor?: string, selectedSize?: string) => {
+  const addToCart = useCallback((product: Product, quantity: number = 1, selectedColor?: string, selectedSize?: string) => {
     playBeep();
 
     // Determine max available stock for chosen variant
@@ -565,11 +763,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...prev
       ];
     });
-  };
+  }, []);
 
-  const updateCartItemQty = (cartKey: string, quantity: number) => {
+  const updateCartItemQty = useCallback((cartKey: string, quantity: number) => {
     if (quantity <= 0) {
-      removeFromCart(cartKey);
+      setCart(prev => prev.filter(item => getCartKey(item.product.id, item.selectedColor, item.selectedSize) !== cartKey));
       return;
     }
     setCart(prev =>
@@ -589,16 +787,16 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return item;
       })
     );
-  };
+  }, []);
 
-  const removeFromCart = (cartKey: string) => {
+  const removeFromCart = useCallback((cartKey: string) => {
     setCart(prev => prev.filter(item => getCartKey(item.product.id, item.selectedColor, item.selectedSize) !== cartKey));
-  };
+  }, []);
 
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setCart([]);
     setCartDiscount(0);
-  };
+  }, []);
 
   const holdCurrentCart = () => {
     if (cart.length === 0) return;
@@ -818,7 +1016,19 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Cash payment creation
-  const createCashTransaction = (cashGiven: number, methodName: string = 'Tunai'): Transaction => {
+  const createCashTransaction = (cashGiven: number, methodName: string = 'Tunai', customerName?: string, customerPhone?: string): Transaction => {
+    if (!isSuperAdmin) {
+      if (attendanceStatus === 'not_started') {
+        alert('Transaksi Ditolak: Anda belum melakukan Absen Masuk hari ini. Silakan mulai hari kerja terlebih dahulu.');
+        setIsCheckInModalOpen(true);
+        return {} as Transaction;
+      }
+      if (attendanceStatus === 'completed') {
+        alert('Transaksi Ditolak: Hari kerja Anda hari ini sudah selesai.');
+        return {} as Transaction;
+      }
+    }
+
     const items = cart.map(item => ({
       productId: item.product.id,
       name: item.product.name,
@@ -847,6 +1057,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'LUNAS',
       cashGiven,
       changeAmount,
+      customerName: customerName?.trim() || undefined,
+      customerPhone: customerPhone?.trim() || undefined,
+      attendanceId: attendance?.id || undefined,
     };
 
     deductStock(items);
@@ -859,6 +1072,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(newTx),
+    }).then(() => {
+      refreshAttendance();
+      fetchTodaySummary();
     }).catch(err => console.error('Failed to save transaction to Neon DB:', err));
 
     return newTx;
@@ -869,8 +1085,22 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     methodName: string,
     transferBank: string,
     proofUrl: string,
-    isConfirmedDirectly: boolean
+    isConfirmedDirectly: boolean,
+    customerName?: string,
+    customerPhone?: string
   ): Transaction => {
+    if (!isSuperAdmin) {
+      if (attendanceStatus === 'not_started') {
+        alert('Transaksi Ditolak: Anda belum melakukan Absen Masuk hari ini. Silakan mulai hari kerja terlebih dahulu.');
+        setIsCheckInModalOpen(true);
+        return {} as Transaction;
+      }
+      if (attendanceStatus === 'completed') {
+        alert('Transaksi Ditolak: Hari kerja Anda hari ini sudah selesai.');
+        return {} as Transaction;
+      }
+    }
+
     const items = cart.map(item => ({
       productId: item.product.id,
       name: item.product.name,
@@ -902,6 +1132,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       transferProofVerified: isConfirmedDirectly,
       transferConfirmedAt: isConfirmedDirectly ? now : undefined,
       transferConfirmedBy: isConfirmedDirectly ? (currentUser?.name || cashier.name) : undefined,
+      customerName: customerName?.trim() || undefined,
+      customerPhone: customerPhone?.trim() || undefined,
+      attendanceId: attendance?.id || undefined,
     };
 
     deductStock(items);
@@ -917,6 +1150,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(newTx),
+    }).then(() => {
+      refreshAttendance();
+      fetchTodaySummary();
     }).catch(err => console.error('Failed to save transfer transaction to Neon DB:', err));
 
     return newTx;
@@ -1108,6 +1344,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getRolePassword,
         playBeep,
         resetToDemoData,
+        attendance,
+        attendanceStatus,
+        isAttendanceLoading,
+        isCheckInModalOpen,
+        setIsCheckInModalOpen,
+        isCheckOutModalOpen,
+        setIsCheckOutModalOpen,
+        refreshAttendance,
+        checkIn,
+        checkOut,
+        todaySummary,
+        fetchTodaySummary,
       }}
     >
       {children}

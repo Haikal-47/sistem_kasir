@@ -59,10 +59,11 @@ npm install
 ```
 
 ### 2. Konfigurasi Environment (`.env`)
-Buat atau periksa file `.env` di root proyek:
+Buat atau periksa file `.env` di root proyek (lihat `.env.example`):
 ```env
-DATABASE_URL="postgresql://neondb_owner:npg_gtfYruN0hi8d@ep-super-mouse-b3uxrazw-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+DATABASE_URL="postgresql://<username>:<password>@<neon-host>/neondb?sslmode=require&channel_binding=require"
 PORT=3001
+AUTH_SECRET="your-secret-key-pos-2026"
 ```
 
 ### 3. Menjalankan Server Backend & Frontend Sekaligus

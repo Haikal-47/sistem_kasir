@@ -76,6 +76,33 @@ export const initDatabase = async () => {
         customer_note TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      ALTER TABLE transactions ADD COLUMN IF NOT EXISTS attendance_id VARCHAR(64);
+      ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
+      ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(50);
+      CREATE INDEX IF NOT EXISTS idx_transactions_attendance ON transactions(attendance_id);
+
+      -- Cashier Attendances Table (Absensi Kasir + Modal Kas Tetap Rp500.000 + Tutup Kas)
+      CREATE TABLE IF NOT EXISTS cashier_attendances (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL REFERENCES users(id),
+        cashier_name VARCHAR(255),
+        date DATE NOT NULL,
+        check_in TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        check_out TIMESTAMP WITH TIME ZONE,
+        opening_cash NUMERIC(15, 2) NOT NULL DEFAULT 500000,
+        expected_cash NUMERIC(15, 2),
+        actual_cash NUMERIC(15, 2),
+        cash_difference NUMERIC(15, 2),
+        status VARCHAR(20) NOT NULL DEFAULT 'working',
+        note TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT unique_user_date UNIQUE(user_id, date)
+      );
+      ALTER TABLE cashier_attendances ADD COLUMN IF NOT EXISTS cashier_name VARCHAR(255);
+
+      CREATE INDEX IF NOT EXISTS idx_attendances_date ON cashier_attendances(date);
+      CREATE INDEX IF NOT EXISTS idx_attendances_user ON cashier_attendances(user_id);
     `);
 
     // 3. Cashier Profile Table

@@ -2,10 +2,17 @@ import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const { Pool } = pg;
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_gtfYruN0hi8d@ep-super-mouse-b3uxrazw-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  console.warn('⚠️ WARNING: DATABASE_URL environment variable is not defined.');
+}
 
 const pool = new Pool({
   connectionString,
@@ -155,6 +162,362 @@ router.get('/auth/me', (req, res) => {
     return res.status(401).json({ error: 'Sesi tidak valid atau telah berakhir.' });
   }
   res.json({ user: req.user });
+});
+
+// ── Cashier Attendance (Absensi + Modal Kas + Tutup Kas) ───────────────────
+
+const getJakartaDateString = () => {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+};
+
+const formatAttendanceRow = (r, stats = null) => ({
+  id: r.id,
+  userId: r.user_id,
+  cashierName: r.cashier_name || r.name || 'Gusti',
+  date: r.date,
+  checkIn: r.check_in,
+  checkOut: r.check_out || null,
+  openingCash: parseFloat(r.opening_cash || 500000),
+  expectedCash: r.expected_cash != null ? parseFloat(r.expected_cash) : (stats?.expectedCash != null ? stats.expectedCash : parseFloat(r.opening_cash || 500000)),
+  actualCash: r.actual_cash != null ? parseFloat(r.actual_cash) : null,
+  cashDifference: r.cash_difference != null ? parseFloat(r.cash_difference) : null,
+  status: r.status,
+  note: r.note || null,
+  stats: stats
+});
+
+// GET /api/attendance/today
+router.get('/attendance/today', async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Sesi tidak valid.' });
+    const today = getJakartaDateString();
+    const userId = req.user.id;
+
+    const result = await pool.query(
+      `SELECT ca.*, u.name AS cashier_name
+       FROM cashier_attendances ca
+       JOIN users u ON u.id = ca.user_id
+       WHERE ca.user_id = $1 AND ca.date = $2
+       LIMIT 1`,
+      [userId, today]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ status: 'not_started', attendance: null });
+    }
+
+    const row = result.rows[0];
+
+    let stats = null;
+    if (row.status === 'working' || row.status === 'completed') {
+      const txResult = await pool.query(
+        `SELECT payment_method, SUM(total) as total_amount, COUNT(*) as tx_count
+         FROM transactions
+         WHERE attendance_id = $1 AND status = 'LUNAS'
+         GROUP BY payment_method`,
+        [row.id]
+      );
+
+      let cashSales = 0, transferSales = 0, qrisSales = 0, totalRevenue = 0, totalTx = 0;
+      for (const tx of txResult.rows) {
+        const amount = parseFloat(tx.total_amount);
+        const count = parseInt(tx.tx_count, 10);
+        totalRevenue += amount;
+        totalTx += count;
+        const methodUpper = (tx.payment_method || '').toUpperCase();
+        if (methodUpper === 'TUNAI') cashSales += amount;
+        else if (methodUpper.includes('QRIS')) qrisSales += amount;
+        else transferSales += amount;
+      }
+
+      const expectedCash = parseFloat(row.opening_cash || 500000) + cashSales;
+      stats = {
+        totalTransactions: totalTx,
+        totalRevenue,
+        cashSales,
+        qrisSales,
+        transferSales,
+        otherSales: 0,
+        expectedCash
+      };
+    }
+
+    return res.json({
+      status: row.status,
+      attendance: formatAttendanceRow(row, stats)
+    });
+  } catch (error) {
+    console.error('Error in GET /api/attendance/today:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/attendance/check-in
+router.post('/attendance/check-in', async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Sesi tidak valid.' });
+    if (req.user.role === 'super_admin') {
+      return res.status(403).json({ error: 'Admin tidak perlu absen kasir.' });
+    }
+
+    const today = getJakartaDateString();
+    const userId = req.user.id;
+
+    const existing = await pool.query(
+      'SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2',
+      [userId, today]
+    );
+
+    if (existing.rows.length > 0) {
+      const row = existing.rows[0];
+      if (row.status === 'working') {
+        return res.status(400).json({ error: 'Anda sudah absen masuk hari ini. Silakan tutup kas terlebih dahulu.' });
+      }
+      if (row.status === 'completed') {
+        return res.status(400).json({ error: 'Hari kerja hari ini sudah ditutup. Absen ulang tidak diizinkan.' });
+      }
+    }
+
+    const userResult = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
+    const cashierName = userResult.rows[0]?.name || req.user.name || 'Gusti';
+
+    const id = `ATT-${Date.now()}`;
+    const OPENING_CASH = 500000;
+
+    const result = await pool.query(
+      `INSERT INTO cashier_attendances (id, user_id, cashier_name, date, check_in, opening_cash, status)
+       VALUES ($1, $2, $3, $4, NOW() AT TIME ZONE 'Asia/Jakarta', $5, 'working')
+       ON CONFLICT (user_id, date) DO UPDATE
+         SET status = 'working', check_in = NOW() AT TIME ZONE 'Asia/Jakarta'
+       RETURNING *`,
+      [id, userId, cashierName, today, OPENING_CASH]
+    );
+
+    const row = result.rows[0];
+    row.cashier_name = cashierName;
+
+    res.json({
+      success: true,
+      attendance: formatAttendanceRow(row, {
+        totalTransactions: 0,
+        totalRevenue: 0,
+        cashSales: 0,
+        qrisSales: 0,
+        transferSales: 0,
+        otherSales: 0,
+        expectedCash: OPENING_CASH
+      })
+    });
+  } catch (error) {
+    console.error('Error in POST /api/attendance/check-in:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/attendance/check-out
+router.post('/attendance/check-out', async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Sesi tidak valid.' });
+    if (req.user.role === 'super_admin') {
+      return res.status(403).json({ error: 'Admin tidak perlu tutup kas kasir.' });
+    }
+
+    const { actualCash, note } = req.body;
+
+    if (actualCash == null || isNaN(Number(actualCash)) || Number(actualCash) < 0) {
+      return res.status(400).json({ error: 'Jumlah kas fisik harus diisi dengan benar.' });
+    }
+
+    const today = getJakartaDateString();
+    const userId = req.user.id;
+
+    const existing = await pool.query(
+      'SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2',
+      [userId, today]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(400).json({ error: 'Anda belum melakukan absen masuk hari ini.' });
+    }
+
+    const row = existing.rows[0];
+    if (row.status === 'completed') {
+      return res.status(400).json({ error: 'Hari kerja sudah ditutup sebelumnya.' });
+    }
+
+    const txResult = await pool.query(
+      `SELECT SUM(total) as cash_total
+       FROM transactions
+       WHERE attendance_id = $1 AND status = 'LUNAS' AND UPPER(payment_method) = 'TUNAI'`,
+      [row.id]
+    );
+
+    const cashSales = parseFloat(txResult.rows[0]?.cash_total || 0);
+    const openingCash = parseFloat(row.opening_cash || 500000);
+    const expectedCash = openingCash + cashSales;
+    const actualCashNum = Number(actualCash);
+    const cashDifference = actualCashNum - expectedCash;
+
+    if (cashDifference !== 0 && (!note || note.trim().length < 3)) {
+      return res.status(400).json({
+        error: `Terdapat selisih kas sebesar ${cashDifference >= 0 ? '+' : ''}Rp${Math.abs(cashDifference).toLocaleString('id-ID')}. Keterangan wajib diisi (min. 3 karakter).`
+      });
+    }
+
+    const allTxResult = await pool.query(
+      `SELECT payment_method, SUM(total) as total_amount, COUNT(*) as tx_count
+       FROM transactions
+       WHERE attendance_id = $1 AND status = 'LUNAS'
+       GROUP BY payment_method`,
+      [row.id]
+    );
+
+    let totalRevenue = 0, totalTx = 0, qrisSales = 0, transferSales = 0;
+    for (const tx of allTxResult.rows) {
+      const amount = parseFloat(tx.total_amount);
+      totalRevenue += amount;
+      totalTx += parseInt(tx.tx_count, 10);
+      const methodUpper = (tx.payment_method || '').toUpperCase();
+      if (methodUpper.includes('QRIS')) qrisSales += amount;
+      else if (methodUpper !== 'TUNAI') transferSales += amount;
+    }
+
+    const updateResult = await pool.query(
+      `UPDATE cashier_attendances
+       SET check_out = NOW() AT TIME ZONE 'Asia/Jakarta',
+           expected_cash = $1,
+           actual_cash = $2,
+           cash_difference = $3,
+           status = 'completed',
+           note = $4,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5
+       RETURNING *`,
+      [expectedCash, actualCashNum, cashDifference, note || null, row.id]
+    );
+
+    const updatedRow = updateResult.rows[0];
+    const userResult = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
+    updatedRow.cashier_name = userResult.rows[0]?.name || req.user.name || 'Gusti';
+
+    res.json({
+      success: true,
+      attendance: formatAttendanceRow(updatedRow, {
+        totalTransactions: totalTx,
+        totalRevenue,
+        cashSales,
+        qrisSales,
+        transferSales,
+        otherSales: 0,
+        expectedCash
+      })
+    });
+  } catch (error) {
+    console.error('Error in POST /api/attendance/check-out:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/attendance/summary-today
+router.get('/attendance/summary-today', async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Sesi tidak valid.' });
+
+    const today = getJakartaDateString();
+    const userId = req.user.role === 'super_admin' ? null : req.user.id;
+
+    const query = userId
+      ? 'SELECT ca.*, u.name AS cashier_name FROM cashier_attendances ca JOIN users u ON u.id = ca.user_id WHERE ca.user_id = $1 AND ca.date = $2 LIMIT 1'
+      : 'SELECT ca.*, u.name AS cashier_name FROM cashier_attendances ca JOIN users u ON u.id = ca.user_id WHERE ca.date = $1 ORDER BY ca.check_in ASC LIMIT 1';
+    const params = userId ? [userId, today] : [today];
+
+    const result = await pool.query(query, params);
+    if (result.rows.length === 0) {
+      return res.json({ status: 'not_started', attendance: null, stats: null });
+    }
+
+    const row = result.rows[0];
+
+    const txResult = await pool.query(
+      `SELECT payment_method, SUM(total) as total_amount, COUNT(*) as tx_count
+       FROM transactions
+       WHERE attendance_id = $1 AND status = 'LUNAS'
+       GROUP BY payment_method`,
+      [row.id]
+    );
+
+    let cashSales = 0, transferSales = 0, qrisSales = 0, totalRevenue = 0, totalTx = 0;
+    for (const tx of txResult.rows) {
+      const amount = parseFloat(tx.total_amount);
+      const count = parseInt(tx.tx_count, 10);
+      totalRevenue += amount;
+      totalTx += count;
+      const methodUpper = (tx.payment_method || '').toUpperCase();
+      if (methodUpper === 'TUNAI') cashSales += amount;
+      else if (methodUpper.includes('QRIS')) qrisSales += amount;
+      else transferSales += amount;
+    }
+
+    const expectedCash = parseFloat(row.opening_cash || 500000) + cashSales;
+    const stats = { totalTransactions: totalTx, totalRevenue, cashSales, qrisSales, transferSales, otherSales: 0, expectedCash };
+
+    res.json({ status: row.status, attendance: formatAttendanceRow(row, stats), stats });
+  } catch (error) {
+    console.error('Error in GET /api/attendance/summary-today:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/attendance/laporan (Admin only)
+router.get('/attendance/laporan', requireAdmin, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const start = startDate || getJakartaDateString();
+    const end = endDate || getJakartaDateString();
+
+    const result = await pool.query(
+      `SELECT ca.*, u.name AS cashier_name
+       FROM cashier_attendances ca
+       JOIN users u ON u.id = ca.user_id
+       WHERE ca.date BETWEEN $1 AND $2
+       ORDER BY ca.date DESC, ca.check_in ASC`,
+      [start, end]
+    );
+
+    const rows = result.rows;
+    const attendanceList = [];
+
+    for (const row of rows) {
+      const txResult = await pool.query(
+        `SELECT payment_method, SUM(total) as total_amount, COUNT(*) as tx_count
+         FROM transactions
+         WHERE attendance_id = $1 AND status = 'LUNAS'
+         GROUP BY payment_method`,
+        [row.id]
+      );
+
+      let cashSales = 0, transferSales = 0, qrisSales = 0, totalRevenue = 0, totalTx = 0;
+      for (const tx of txResult.rows) {
+        const amount = parseFloat(tx.total_amount);
+        const count = parseInt(tx.tx_count, 10);
+        totalRevenue += amount;
+        totalTx += count;
+        const methodUpper = (tx.payment_method || '').toUpperCase();
+        if (methodUpper === 'TUNAI') cashSales += amount;
+        else if (methodUpper.includes('QRIS')) qrisSales += amount;
+        else transferSales += amount;
+      }
+
+      const expectedCash = parseFloat(row.opening_cash || 500000) + cashSales;
+      const stats = { totalTransactions: totalTx, totalRevenue, cashSales, qrisSales, transferSales, otherSales: 0, expectedCash };
+      attendanceList.push(formatAttendanceRow(row, stats));
+    }
+
+    res.json({ attendances: attendanceList, total: attendanceList.length });
+  } catch (error) {
+    console.error('Error in GET /api/attendance/laporan:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ── User Management ────────────────────────────────────────────────────────
@@ -521,12 +884,19 @@ router.get('/transactions', async (req, res) => {
       transferConfirmedAt: r.transfer_confirmed_at ? (r.transfer_confirmed_at.toISOString ? r.transfer_confirmed_at.toISOString() : r.transfer_confirmed_at) : undefined,
       transferConfirmedBy: r.transfer_confirmed_by || undefined,
       customerNote: r.customer_note || undefined,
+      customerName: r.customer_name || undefined,
+      customerPhone: r.customer_phone || undefined,
+      attendanceId: r.attendance_id || undefined,
     }));
     res.json(transactions);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+const getJakartaDate = () => {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+};
 
 router.post('/transactions', async (req, res) => {
   const client = await pool.connect();
@@ -552,7 +922,42 @@ router.post('/transactions', async (req, res) => {
       transferConfirmedAt,
       transferConfirmedBy,
       customerNote,
+      customerName,
+      customerPhone,
     } = req.body;
+
+    // ── Attendance Validation (Prompt Rules 9, 21, 30, 31) ──
+    const todayJakarta = getJakartaDate();
+    const cashierUserId = (req.user && req.user.role === 'kasir') ? req.user.id : 'USR-KAS-01';
+
+    const attRes = await client.query(
+      `SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2 LIMIT 1`,
+      [cashierUserId, todayJakarta]
+    );
+
+    let activeAttendanceId = null;
+
+    if (attRes.rows.length === 0) {
+      if (req.user && req.user.role === 'super_admin') {
+        activeAttendanceId = null;
+      } else {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: 'Transaksi ditolak: Anda belum melakukan Absen Masuk hari ini. Silakan mulai hari kerja terlebih dahulu.',
+          code: 'ATTENDANCE_NOT_STARTED'
+        });
+      }
+    } else {
+      const att = attRes.rows[0];
+      if (att.status === 'completed') {
+        await client.query('ROLLBACK');
+        return res.status(403).json({
+          error: 'Transaksi ditolak: Hari kerja Anda hari ini sudah selesai.',
+          code: 'ATTENDANCE_COMPLETED'
+        });
+      }
+      activeAttendanceId = att.id;
+    }
 
     for (const item of items) {
       const prodRes = await client.query('SELECT stock, variants FROM products WHERE id = $1', [item.productId]);
@@ -582,13 +987,20 @@ router.post('/transactions', async (req, res) => {
       }
     }
 
+    // Auto-migrate: add customer_name & customer_phone columns if not exist
+    try {
+      await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255)`);
+      await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(50)`);
+    } catch (_) { /* column may already exist */ }
+
     const result = await client.query(
       `INSERT INTO transactions (
         id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total,
         payment_method, status, cash_given, change_amount, transfer_bank, transfer_proof_url,
-        transfer_proof_verified, transfer_confirmed_at, transfer_confirmed_by, customer_note
+        transfer_proof_verified, transfer_confirmed_at, transfer_confirmed_by, customer_note,
+        customer_name, customer_phone, attendance_id
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
       ) RETURNING *`,
       [
         id,
@@ -610,11 +1022,14 @@ router.post('/transactions', async (req, res) => {
         transferConfirmedAt || null,
         transferConfirmedBy || null,
         customerNote || null,
+        customerName || null,
+        customerPhone || null,
+        activeAttendanceId
       ]
     );
 
     await client.query('COMMIT');
-    res.status(201).json({ ...req.body, id: result.rows[0].id });
+    res.status(201).json({ ...req.body, id: result.rows[0].id, attendanceId: result.rows[0].attendance_id });
   } catch (error) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: error.message });
@@ -701,6 +1116,439 @@ router.patch('/transactions/:id/cancel', async (req, res) => {
 });
 
 // ── Cashier Profile ────────────────────────────────────────────────────────
+
+// ─── CASHIER ATTENDANCE & CASH CLOSING ─────────────────────────────────────
+
+// GET /api/attendance/today - Get current attendance & stats for today
+router.get('/attendance/today', async (req, res) => {
+  try {
+    const today = getJakartaDate();
+    const targetUserId = (req.user && req.user.role === 'kasir') ? req.user.id : 'USR-KAS-01';
+
+    const attRes = await pool.query(
+      `SELECT a.*, u.name as cashier_name 
+       FROM cashier_attendances a 
+       JOIN users u ON u.id = a.user_id 
+       WHERE a.user_id = $1 AND a.date = $2`,
+      [targetUserId, today]
+    );
+
+    if (attRes.rows.length === 0) {
+      const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [targetUserId]);
+      const cashierName = userRes.rows[0]?.name || 'Gusti';
+      return res.json({
+        status: 'not_started',
+        date: today,
+        cashierName,
+        openingCash: 500000,
+        attendance: null
+      });
+    }
+
+    const a = attRes.rows[0];
+
+    const txRes = await pool.query(
+      `SELECT * FROM transactions 
+       WHERE (attendance_id = $1 OR (attendance_id IS NULL AND DATE(date AT TIME ZONE 'Asia/Jakarta') = $2))
+         AND status != 'BATAL'`,
+      [a.id, today]
+    );
+
+    let totalTransactions = 0;
+    let totalRevenue = 0;
+    let cashSales = 0;
+    let qrisSales = 0;
+    let transferSales = 0;
+    let otherSales = 0;
+
+    for (const tx of txRes.rows) {
+      totalTransactions += 1;
+      const amt = parseFloat(tx.total);
+      totalRevenue += amt;
+      const method = (tx.payment_method || '').toLowerCase();
+      if (method === 'tunai' || method.includes('tunai') || method.includes('cash')) {
+        cashSales += amt;
+      } else if (method.includes('qris')) {
+        qrisSales += amt;
+      } else if (method.includes('transfer') || method.includes('bca') || method.includes('bni') || method.includes('bri') || method.includes('mandiri')) {
+        transferSales += amt;
+      } else {
+        otherSales += amt;
+      }
+    }
+
+    const openingCash = parseFloat(a.opening_cash) || 500000;
+    const computedExpectedCash = openingCash + cashSales;
+
+    res.json({
+      status: a.status,
+      date: a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date,
+      cashierName: a.cashier_name,
+      openingCash,
+      attendance: {
+        id: a.id,
+        userId: a.user_id,
+        cashierName: a.cashier_name,
+        date: a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date,
+        checkIn: a.check_in ? (a.check_in.toISOString ? a.check_in.toISOString() : a.check_in) : null,
+        checkOut: a.check_out ? (a.check_out.toISOString ? a.check_out.toISOString() : a.check_out) : null,
+        openingCash,
+        expectedCash: a.status === 'completed' && a.expected_cash !== null ? parseFloat(a.expected_cash) : computedExpectedCash,
+        actualCash: a.actual_cash !== null ? parseFloat(a.actual_cash) : null,
+        cashDifference: a.cash_difference !== null ? parseFloat(a.cash_difference) : null,
+        status: a.status,
+        note: a.note,
+        stats: {
+          totalTransactions,
+          totalRevenue,
+          cashSales,
+          qrisSales,
+          transferSales,
+          otherSales,
+          expectedCash: computedExpectedCash
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching today attendance:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/attendance/check-in - Gusti starts work day
+router.post('/attendance/check-in', async (req, res) => {
+  try {
+    const today = getJakartaDate();
+    const targetUserId = (req.user && req.user.role === 'kasir') ? req.user.id : 'USR-KAS-01';
+
+    const existing = await pool.query(
+      'SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2',
+      [targetUserId, today]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(400).json({
+        error: 'Absen masuk sudah dilakukan untuk hari ini. Tidak dapat melakukan absen ganda.',
+        attendance: existing.rows[0]
+      });
+    }
+
+    const attId = `ATT-${Date.now()}`;
+    const insertRes = await pool.query(
+      `INSERT INTO cashier_attendances (
+        id, user_id, date, check_in, opening_cash, status
+      ) VALUES ($1, $2, $3, CURRENT_TIMESTAMP, 500000, 'working')
+      RETURNING *`,
+      [attId, targetUserId, today]
+    );
+
+    const a = insertRes.rows[0];
+    const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [targetUserId]);
+    const cashierName = userRes.rows[0]?.name || 'Gusti';
+
+    res.status(201).json({
+      success: true,
+      status: 'working',
+      attendance: {
+        id: a.id,
+        userId: a.user_id,
+        cashierName,
+        date: a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date,
+        checkIn: a.check_in ? (a.check_in.toISOString ? a.check_in.toISOString() : a.check_in) : null,
+        checkOut: null,
+        openingCash: parseFloat(a.opening_cash),
+        expectedCash: parseFloat(a.opening_cash),
+        actualCash: null,
+        cashDifference: null,
+        status: 'working',
+        note: null,
+        stats: {
+          totalTransactions: 0,
+          totalRevenue: 0,
+          cashSales: 0,
+          qrisSales: 0,
+          transferSales: 0,
+          otherSales: 0,
+          expectedCash: parseFloat(a.opening_cash)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error on check-in:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/attendance/check-out - Tutup Kas Harian & Absen Pulang
+router.post('/attendance/check-out', async (req, res) => {
+  try {
+    const today = getJakartaDate();
+    const targetUserId = (req.user && req.user.role === 'kasir') ? req.user.id : 'USR-KAS-01';
+    const { actualCash, note } = req.body;
+
+    if (actualCash === undefined || actualCash === null || isNaN(Number(actualCash))) {
+      return res.status(400).json({ error: 'Uang kas aktual di laci wajib dimasukkan.' });
+    }
+
+    const attRes = await pool.query(
+      `SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2`,
+      [targetUserId, today]
+    );
+
+    if (attRes.rows.length === 0) {
+      return res.status(400).json({ error: 'Belum melakukan Absen Masuk untuk hari ini.' });
+    }
+
+    const a = attRes.rows[0];
+    if (a.status === 'completed') {
+      return res.status(400).json({ error: 'Hari kerja hari ini sudah selesai (sudah tutup kas).' });
+    }
+
+    const txRes = await pool.query(
+      `SELECT * FROM transactions 
+       WHERE (attendance_id = $1 OR (attendance_id IS NULL AND DATE(date AT TIME ZONE 'Asia/Jakarta') = $2))
+         AND status != 'BATAL'`,
+      [a.id, today]
+    );
+
+    let cashSales = 0;
+    for (const tx of txRes.rows) {
+      const method = (tx.payment_method || '').toLowerCase();
+      if (method === 'tunai' || method.includes('tunai') || method.includes('cash')) {
+        cashSales += parseFloat(tx.total);
+      }
+    }
+
+    const openingCash = parseFloat(a.opening_cash) || 500000;
+    const expectedCash = openingCash + cashSales;
+    const parsedActualCash = parseFloat(actualCash);
+    const cashDifference = parsedActualCash - expectedCash;
+
+    if (cashDifference !== 0 && (!note || note.trim().length === 0)) {
+      return res.status(400).json({
+        error: `Terdapat selisih kas sebesar ${cashDifference < 0 ? '-' : '+'}Rp ${Math.abs(cashDifference).toLocaleString('id-ID')}. Keterangan selisih wajib diisi!`
+      });
+    }
+
+    const updateRes = await pool.query(
+      `UPDATE cashier_attendances
+       SET check_out = CURRENT_TIMESTAMP,
+           expected_cash = $1,
+           actual_cash = $2,
+           cash_difference = $3,
+           status = 'completed',
+           note = $4,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5
+       RETURNING *`,
+      [expectedCash, parsedActualCash, cashDifference, note ? note.trim() : null, a.id]
+    );
+
+    const updated = updateRes.rows[0];
+    const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [targetUserId]);
+    const cashierName = userRes.rows[0]?.name || 'Gusti';
+
+    res.json({
+      success: true,
+      status: 'completed',
+      attendance: {
+        id: updated.id,
+        userId: updated.user_id,
+        cashierName,
+        date: updated.date.toISOString ? updated.date.toISOString().slice(0, 10) : updated.date,
+        checkIn: updated.check_in ? (updated.check_in.toISOString ? updated.check_in.toISOString() : updated.check_in) : null,
+        checkOut: updated.check_out ? (updated.check_out.toISOString ? updated.check_out.toISOString() : updated.check_out) : null,
+        openingCash,
+        expectedCash,
+        actualCash: parsedActualCash,
+        cashDifference,
+        status: 'completed',
+        note: updated.note
+      }
+    });
+  } catch (error) {
+    console.error('Error on check-out:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/attendance/summary-today - Status summary for Admin Dashboard card
+router.get('/attendance/summary-today', async (req, res) => {
+  try {
+    const today = getJakartaDate();
+    const targetUserId = 'USR-KAS-01';
+
+    const attRes = await pool.query(
+      `SELECT a.*, u.name as cashier_name 
+       FROM cashier_attendances a 
+       JOIN users u ON u.id = a.user_id 
+       WHERE a.user_id = $1 AND a.date = $2`,
+      [targetUserId, today]
+    );
+
+    if (attRes.rows.length === 0) {
+      return res.json({
+        status: 'not_started',
+        cashierName: 'Gusti',
+        date: today,
+        openingCash: 500000,
+        revenueToday: 0
+      });
+    }
+
+    const a = attRes.rows[0];
+    const txRes = await pool.query(
+      `SELECT * FROM transactions 
+       WHERE (attendance_id = $1 OR (attendance_id IS NULL AND DATE(date AT TIME ZONE 'Asia/Jakarta') = $2))
+         AND status != 'BATAL'`,
+      [a.id, today]
+    );
+
+    let totalRevenue = 0;
+    let cashSales = 0;
+    for (const tx of txRes.rows) {
+      const amt = parseFloat(tx.total);
+      totalRevenue += amt;
+      const method = (tx.payment_method || '').toLowerCase();
+      if (method === 'tunai' || method.includes('tunai') || method.includes('cash')) {
+        cashSales += amt;
+      }
+    }
+
+    const openingCash = parseFloat(a.opening_cash) || 500000;
+    const expectedCash = openingCash + cashSales;
+
+    res.json({
+      status: a.status,
+      cashierName: a.cashier_name,
+      date: a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date,
+      checkIn: a.check_in ? (a.check_in.toISOString ? a.check_in.toISOString() : a.check_in) : null,
+      checkOut: a.check_out ? (a.check_out.toISOString ? a.check_out.toISOString() : a.check_out) : null,
+      openingCash,
+      revenueToday: totalRevenue,
+      cashSales,
+      expectedCash: a.status === 'completed' && a.expected_cash !== null ? parseFloat(a.expected_cash) : expectedCash,
+      actualCash: a.actual_cash !== null ? parseFloat(a.actual_cash) : null,
+      cashDifference: a.cash_difference !== null ? parseFloat(a.cash_difference) : null,
+      note: a.note
+    });
+  } catch (error) {
+    console.error('Error fetching today summary:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/attendance/reports - Admin Only Laporan Absensi & Kas Harian
+router.get('/attendance/reports', requireAdmin, async (req, res) => {
+  try {
+    const { period, startDate, endDate } = req.query;
+    const today = getJakartaDate();
+
+    let queryDateClause = '';
+    const params = [];
+
+    if (period === 'today') {
+      params.push(today);
+      queryDateClause = `WHERE a.date = $${params.length}`;
+    } else if (period === 'yesterday') {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      const yesterdayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(d);
+      params.push(yesterdayStr);
+      queryDateClause = `WHERE a.date = $${params.length}`;
+    } else if (period === 'this_week') {
+      const now = new Date();
+      const day = now.getDay() || 7;
+      now.setDate(now.getDate() - day + 1);
+      const mondayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now);
+      params.push(mondayStr, today);
+      queryDateClause = `WHERE a.date >= $${params.length - 1} AND a.date <= $${params.length}`;
+    } else if (period === 'this_month') {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const firstDayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(firstDay);
+      params.push(firstDayStr, today);
+      queryDateClause = `WHERE a.date >= $${params.length - 1} AND a.date <= $${params.length}`;
+    } else if (startDate && endDate) {
+      params.push(startDate, endDate);
+      queryDateClause = `WHERE a.date >= $${params.length - 1} AND a.date <= $${params.length}`;
+    }
+
+    const attRes = await pool.query(
+      `SELECT a.*, u.name as cashier_name
+       FROM cashier_attendances a
+       JOIN users u ON u.id = a.user_id
+       ${queryDateClause}
+       ORDER BY a.date DESC, a.check_in DESC`,
+      params
+    );
+
+    const reports = [];
+    for (const a of attRes.rows) {
+      const dateStr = a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date;
+      const txRes = await pool.query(
+        `SELECT * FROM transactions 
+         WHERE (attendance_id = $1 OR (attendance_id IS NULL AND DATE(date AT TIME ZONE 'Asia/Jakarta') = $2))
+           AND status != 'BATAL'`,
+        [a.id, dateStr]
+      );
+
+      let totalTx = 0;
+      let totalRev = 0;
+      let cashAmt = 0;
+      let qrisAmt = 0;
+      let transferAmt = 0;
+      let otherAmt = 0;
+
+      for (const tx of txRes.rows) {
+        totalTx += 1;
+        const amt = parseFloat(tx.total);
+        totalRev += amt;
+        const method = (tx.payment_method || '').toLowerCase();
+        if (method === 'tunai' || method.includes('tunai') || method.includes('cash')) {
+          cashAmt += amt;
+        } else if (method.includes('qris')) {
+          qrisAmt += amt;
+        } else if (method.includes('transfer') || method.includes('bca') || method.includes('bni') || method.includes('bri') || method.includes('mandiri')) {
+          transferAmt += amt;
+        } else {
+          otherAmt += amt;
+        }
+      }
+
+      const openingCash = parseFloat(a.opening_cash) || 500000;
+      const calculatedExpected = openingCash + cashAmt;
+      const actualCash = a.actual_cash !== null ? parseFloat(a.actual_cash) : null;
+      const diff = a.cash_difference !== null ? parseFloat(a.cash_difference) : (actualCash !== null ? actualCash - calculatedExpected : null);
+
+      reports.push({
+        id: a.id,
+        userId: a.user_id,
+        cashierName: a.cashier_name,
+        date: dateStr,
+        checkIn: a.check_in ? (a.check_in.toISOString ? a.check_in.toISOString() : a.check_in) : null,
+        checkOut: a.check_out ? (a.check_out.toISOString ? a.check_out.toISOString() : a.check_out) : null,
+        openingCash,
+        totalTransactions: totalTx,
+        totalRevenue: totalRev,
+        cashSales: cashAmt,
+        qrisSales: qrisAmt,
+        transferSales: transferAmt,
+        otherSales: otherAmt,
+        expectedCash: a.status === 'completed' && a.expected_cash !== null ? parseFloat(a.expected_cash) : calculatedExpected,
+        actualCash,
+        cashDifference: diff,
+        status: a.status,
+        note: a.note
+      });
+    }
+
+    res.json(reports);
+  } catch (error) {
+    console.error('Error fetching attendance reports:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.get('/cashier', async (req, res) => {
   try {
@@ -883,8 +1731,9 @@ const ensureScannerTables = async () => {
         session_code VARCHAR(50) PRIMARY KEY,
         last_heartbeat TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         device_name VARCHAR(100)
-      );
-
+      )
+    `);
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS pending_scans (
         id SERIAL PRIMARY KEY,
         session_code VARCHAR(50) NOT NULL,
@@ -894,9 +1743,10 @@ const ensureScannerTables = async () => {
         product_name VARCHAR(255),
         product_price NUMERIC(15, 2),
         success BOOLEAN
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_pending_scans_session ON pending_scans (session_code, processed);
+      )
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_pending_scans_session ON pending_scans (session_code, processed)
     `);
     isScannerTableReady = true;
   } catch (e) {

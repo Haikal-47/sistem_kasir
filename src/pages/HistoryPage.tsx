@@ -20,7 +20,7 @@ import {
 import { ArfaInvoiceModal } from '../components/ArfaInvoiceModal';
 
 export const HistoryPage: React.FC = () => {
-  const { transactions, setSelectedReceipt, confirmTransferPayment, cancelTransaction } = usePOS();
+  const { transactions, setSelectedReceipt, confirmTransferPayment, cancelTransaction, isSuperAdmin, attendance, attendanceStatus } = usePOS();
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('SEMUA');
@@ -28,8 +28,16 @@ export const HistoryPage: React.FC = () => {
   const [selectedTxDetail, setSelectedTxDetail] = useState<Transaction | null>(null);
   const [selectedInvoiceTx, setSelectedInvoiceTx] = useState<Transaction | null>(null);
 
+  // Kasir: hanya tampilkan transaksi sesi absensi shift saat ini (0 di awal masuk shift)
+  // Admin: tampilkan semua transaksi arsip
+  const sessionTransactions = (() => {
+    if (isSuperAdmin) return transactions;
+    if (!attendance || attendanceStatus === 'not_started' || !attendance.id) return []; // Belum absen masuk → 0 transaksi
+    return transactions.filter(tx => tx.attendanceId === attendance.id);
+  })();
+
   // Filtered transactions
-  const filteredTransactions = transactions.filter((tx) => {
+  const filteredTransactions = sessionTransactions.filter((tx) => {
     const q = searchQuery.toLowerCase().trim();
     const matchesQ = !q || 
       tx.invoiceNumber.toLowerCase().includes(q) ||
@@ -50,16 +58,20 @@ export const HistoryPage: React.FC = () => {
         <div>
           <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Receipt className="w-5 h-5 md:w-6 md:h-6 text-brand-600" />
-            <span>Riwayat Transaksi Kasir</span>
+            <span>Riwayat Transaksi {isSuperAdmin ? '' : 'Shift Hari Ini'}</span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Arsip seluruh transaksi penjualan, nota pembayaran kasir, dan status pelunasan.
+            {isSuperAdmin
+              ? 'Arsip seluruh transaksi penjualan dari semua sesi.'
+              : attendanceStatus === 'not_started'
+              ? 'Belum ada sesi shift aktif hari ini. Silakan Absen Masuk terlebih dahulu.'
+              : 'Transaksi yang dibuat dalam sesi shift Anda hari ini.'}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
-            Total Transaksi: <strong className="text-slate-900">{transactions.length}</strong>
+            Total Transaksi: <strong className="text-slate-900">{sessionTransactions.length}</strong>
           </span>
         </div>
       </div>
@@ -118,9 +130,22 @@ export const HistoryPage: React.FC = () => {
         {/* ===== MOBILE CARD VIEW ===== */}
         <div className="md:hidden space-y-3">
           {filteredTransactions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-              <Receipt className="w-10 h-10 mb-2 stroke-1" />
-              <p className="text-sm">Tidak ada transaksi yang sesuai filter.</p>
+            <div className="flex flex-col items-center justify-center py-16 text-slate-400 text-center px-4">
+              <Receipt className="w-10 h-10 mb-2 stroke-1 text-slate-300" />
+              <p className="text-sm font-semibold text-slate-600">
+                {!isSuperAdmin && attendanceStatus === 'not_started'
+                  ? 'Belum ada sesi shift aktif'
+                  : !isSuperAdmin && sessionTransactions.length === 0
+                  ? 'Shift Kasir Dimulai: 0 Transaksi'
+                  : 'Tidak ada transaksi yang sesuai'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                {!isSuperAdmin && attendanceStatus === 'not_started'
+                  ? 'Silakan lakukan Absen Masuk untuk mulai melayani transaksi.'
+                  : !isSuperAdmin && sessionTransactions.length === 0
+                  ? 'Setiap awal masuk shift, data riwayat dimulai dari 0. Transaksi shift ini akan tampil di sini.'
+                  : 'Coba ubah kata kunci pencarian atau filter status.'}
+              </p>
             </div>
           ) : (
             filteredTransactions.map((tx) => {
@@ -331,7 +356,21 @@ export const HistoryPage: React.FC = () => {
 
           {filteredTransactions.length === 0 && (
             <div className="p-12 text-center text-slate-400 text-xs">
-              Tidak ada catatan transaksi yang sesuai dengan filter.
+              <Receipt className="w-8 h-8 mx-auto mb-2 text-slate-300 stroke-1" />
+              <div className="font-semibold text-slate-600 text-sm">
+                {!isSuperAdmin && attendanceStatus === 'not_started'
+                  ? 'Belum ada sesi shift aktif'
+                  : !isSuperAdmin && sessionTransactions.length === 0
+                  ? 'Shift Kasir Baru Dimulai: 0 Riwayat Transaksi'
+                  : 'Tidak ada catatan transaksi yang sesuai'}
+              </div>
+              <div className="text-slate-400 text-xs mt-1">
+                {!isSuperAdmin && attendanceStatus === 'not_started'
+                  ? 'Silakan lakukan Absen Masuk untuk mulai mencatat transaksi shift.'
+                  : !isSuperAdmin && sessionTransactions.length === 0
+                  ? 'Setiap awal shift, data riwayat transaksi kasir diatur mulai dari 0. Transaksi yang diproses akan tercatat di sini.'
+                  : 'Coba sesuaikan pencarian atau filter status transaksi.'}
+              </div>
             </div>
           )}
         </div>

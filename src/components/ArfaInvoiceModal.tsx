@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Transaction } from '../types';
 import { formatRupiah } from '../utils/formatters';
-import { Printer, X, FileText, CheckCircle2, Edit3 } from 'lucide-react';
+import { Printer, X, FileText, CheckCircle2, Edit3, Send, Phone } from 'lucide-react';
 
 interface ArfaInvoiceModalProps {
   transaction: Transaction | null;
@@ -12,7 +12,8 @@ export const ArfaInvoiceModal: React.FC<ArfaInvoiceModalProps> = ({ transaction,
   if (!transaction) return null;
 
   // Editable customer info states so cashier can tailor it for printing
-  const [customerName, setCustomerName] = useState<string>(transaction.customerNote || 'Fransiska');
+  const [customerName, setCustomerName] = useState<string>(transaction.customerName || transaction.customerNote || '');
+  const [customerPhone, setCustomerPhone] = useState<string>(transaction.customerPhone || '');
   const [customerAddress, setCustomerAddress] = useState<string>('');
   const [bankInfo, setBankInfo] = useState<string>('7160179109 BCA a/n');
   const [accountHolder, setAccountHolder] = useState<string>('Amelia Azizah');
@@ -40,6 +41,54 @@ export const ArfaInvoiceModal: React.FC<ArfaInvoiceModalProps> = ({ transaction,
 
   const handlePrint = () => {
     window.print();
+  };
+
+  // Build WhatsApp message with invoice details
+  const handleSendWhatsApp = () => {
+    const phoneRaw = customerPhone.replace(/\D/g, '');
+    // Convert 08xx → 628xx
+    const phoneWA = phoneRaw.startsWith('0')
+      ? '62' + phoneRaw.slice(1)
+      : phoneRaw.startsWith('62')
+      ? phoneRaw
+      : '62' + phoneRaw;
+
+    if (!phoneWA || phoneWA.length < 10) {
+      alert('Nomor telepon pelanggan belum diisi atau tidak valid. Silakan isi nomor HP pelanggan terlebih dahulu.');
+      setIsEditing(true);
+      return;
+    }
+
+    const itemLines = transaction.items
+      .map((item, idx) => {
+        const variant = [item.selectedColor, item.selectedSize].filter(Boolean).join(' / ');
+        return `${idx + 1}. ${item.name}${item.brand ? ` (${item.brand})` : ''}${variant ? ` — ${variant}` : ''}\n   ${item.quantity} x ${formatRupiah(item.price)} = *${formatRupiah(item.subtotal)}*`;
+      })
+      .join('\n');
+
+    const discountLine = transaction.discount > 0
+      ? `\nDiskon: -${formatRupiah(transaction.discount)}`
+      : '';
+
+    const message = `🧾 *INVOICE ARFA FASHION*
+━━━━━━━━━━━━━━━━━━━━
+📋 No. Invoice : *${transaction.invoiceNumber}*
+📅 Tanggal     : ${formatDateIndo(transaction.date)}
+👤 Kepada      : *${customerName || '-'}*
+━━━━━━━━━━━━━━━━━━━━
+*DETAIL BELANJA:*
+
+${itemLines}
+━━━━━━━━━━━━━━━━━━━━
+Subtotal : ${formatRupiah(transaction.subtotal)}${discountLine}
+💰 *TOTAL : ${formatRupiah(transaction.total)}*
+💳 Pembayaran : ${transaction.paymentMethod}
+━━━━━━━━━━━━━━━━━━━━
+Terima kasih telah berbelanja di *ARFA FASHION* 🛍️
+Semoga puas dengan produknya! 😊`;
+
+    const encoded = encodeURIComponent(message);
+    window.open(`https://wa.me/${phoneWA}?text=${encoded}`, '_blank');
   };
 
   return (
@@ -78,6 +127,21 @@ export const ArfaInvoiceModal: React.FC<ArfaInvoiceModalProps> = ({ transaction,
               <span>{isEditing ? 'Selesai Edit' : 'Edit Info'}</span>
             </button>
 
+            {/* Kirim via WhatsApp */}
+            <button
+              onClick={handleSendWhatsApp}
+              className="py-1.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-900/40"
+              title={customerPhone ? `Kirim ke ${customerPhone}` : 'Isi nomor HP pelanggan terlebih dahulu'}
+            >
+              <Send className="w-4 h-4" />
+              <span>Kirim Invoice</span>
+              {customerPhone && (
+                <span className="text-emerald-200 font-normal text-[10px] ml-0.5">
+                  📱 {customerPhone}
+                </span>
+              )}
+            </button>
+
             <button
               onClick={handlePrint}
               className="py-1.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-blue-900/40"
@@ -105,6 +169,18 @@ export const ArfaInvoiceModal: React.FC<ArfaInvoiceModalProps> = ({ transaction,
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 placeholder="Contoh: Fransiska"
+                className="px-2 py-1 bg-white border border-amber-300 rounded text-xs text-slate-800 outline-none w-36 font-semibold"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <Phone className="w-3.5 h-3.5 text-amber-700" />
+              <span className="font-bold text-amber-900">No. HP:</span>
+              <input
+                type="tel"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder="08xx-xxxx-xxxx"
                 className="px-2 py-1 bg-white border border-amber-300 rounded text-xs text-slate-800 outline-none w-36 font-semibold"
               />
             </div>
@@ -187,6 +263,11 @@ export const ArfaInvoiceModal: React.FC<ArfaInvoiceModalProps> = ({ transaction,
                   <span className="w-28 font-bold text-black">Alamat</span>
                   <span className="w-4 font-bold text-black">:</span>
                   <span className="text-black">{customerAddress || ''}</span>
+                </div>
+                <div className="flex items-baseline">
+                  <span className="w-28 font-bold text-black">No. HP</span>
+                  <span className="w-4 font-bold text-black">:</span>
+                  <span className="text-black font-medium">{customerPhone || '-'}</span>
                 </div>
                 <div className="flex items-baseline">
                   <span className="w-28 font-bold text-black">No.</span>
@@ -300,7 +381,7 @@ export const ArfaInvoiceModal: React.FC<ArfaInvoiceModalProps> = ({ transaction,
         <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between print:hidden">
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>Desain siap cetak rasio A4 • Warna biru terkunci otomatis pada cetak PDF</span>
+            <span>Format cetak standar ARFA FASHION (Warna biru & pink terkunci otomatis)</span>
           </div>
 
           <div className="flex gap-2">
@@ -308,14 +389,24 @@ export const ArfaInvoiceModal: React.FC<ArfaInvoiceModalProps> = ({ transaction,
               onClick={onClose}
               className="py-2 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-100 transition-colors"
             >
-              Tutup
+              Selesai / Tutup
             </button>
+
+            {/* Kirim via WhatsApp (footer) */}
+            <button
+              onClick={handleSendWhatsApp}
+              className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-900/30"
+            >
+              <Send className="w-4 h-4" />
+              <span>Kirim WhatsApp</span>
+            </button>
+
             <button
               onClick={handlePrint}
               className="py-2 px-5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-blue-900/30"
             >
               <Printer className="w-4 h-4" />
-              <span>Cetak Sekarang</span>
+              <span>Cetak Invoice (PDF)</span>
             </button>
           </div>
         </div>

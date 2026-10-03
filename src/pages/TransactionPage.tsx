@@ -213,9 +213,19 @@ export const TransactionPage: React.FC = () => {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [cart, clearCart, setIsCheckoutOpen, processBarcodeLookup, barcodeInput, showDiscountModal]);
 
+  // Ref to hold latest processBarcodeLookup without re-triggering polling effect on cart updates
+  const processBarcodeLookupRef = useRef(processBarcodeLookup);
+  useEffect(() => {
+    processBarcodeLookupRef.current = processBarcodeLookup;
+  }, [processBarcodeLookup]);
+
+  const isPollingBusyRef = useRef<boolean>(false);
+
   // ─── DB Polling: Wireless Mobile Phone Scanner ─────────────────────────────
   useEffect(() => {
     const pollPendingScans = async () => {
+      if (isPollingBusyRef.current) return;
+      isPollingBusyRef.current = true;
       try {
         const res = await fetch(`/api/scan/pending?session=${sessionCode}`);
         if (!res.ok) return;
@@ -232,7 +242,7 @@ export const TransactionPage: React.FC = () => {
 
         setIsScannerPolling(true);
         for (const scan of scans) {
-          const result = processBarcodeLookup(scan.barcode);
+          const result = processBarcodeLookupRef.current(scan.barcode);
           try {
             await fetch(`/api/scan/${scan.id}/processed`, {
               method: 'POST',
@@ -250,15 +260,17 @@ export const TransactionPage: React.FC = () => {
         setTimeout(() => setIsScannerPolling(false), 2000);
       } catch (e) {
         console.error('[Scanner Polling] Error:', e);
+      } finally {
+        isPollingBusyRef.current = false;
       }
     };
 
     pollPendingScans();
-    pollingRef.current = setInterval(pollPendingScans, 1500);
+    const interval = setInterval(pollPendingScans, 2500);
     return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      clearInterval(interval);
     };
-  }, [sessionCode, processBarcodeLookup]);
+  }, [sessionCode]);
 
   // Categories list
   const categories = ['Semua', ...Array.from(new Set(products.map(p => p.category)))];
@@ -691,18 +703,28 @@ export const TransactionPage: React.FC = () => {
                   {/* Qty Controls */}
                   <div className="flex items-center gap-1.5 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
                     <button
-                      onClick={() => updateCartItemQty(cartKey, item.quantity - 1)}
-                      className="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-200 flex items-center justify-center shadow-2xs"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateCartItemQty(cartKey, item.quantity - 1);
+                      }}
+                      className="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-200 active:scale-90 flex items-center justify-center shadow-2xs cursor-pointer transition-transform"
+                      title="Kurangi 1 item"
                     >
                       <Minus className="w-3 h-3" />
                     </button>
-                    <span className="w-8 text-center text-xs font-bold font-mono text-slate-900">
+                    <span className="w-8 text-center text-xs font-bold font-mono text-slate-900 select-none">
                       {item.quantity}
                     </span>
                     <button
-                      onClick={() => updateCartItemQty(cartKey, item.quantity + 1)}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateCartItemQty(cartKey, item.quantity + 1);
+                      }}
                       disabled={item.quantity >= item.product.stock}
-                      className="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-200 flex items-center justify-center shadow-2xs disabled:opacity-40"
+                      className="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-200 active:scale-90 flex items-center justify-center shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-transform"
+                      title="Tambah 1 item"
                     >
                       <Plus className="w-3 h-3" />
                     </button>

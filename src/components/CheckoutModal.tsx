@@ -14,8 +14,9 @@ import {
   Sparkles,
   ChevronRight,
   Plus,
-  Settings,
   Building2,
+  User,
+  Phone,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -68,6 +69,10 @@ export const CheckoutModal: React.FC = () => {
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethodConfig | null>(null);
 
+  // Customer info
+  const [customerName, setCustomerName] = useState<string>('');
+  const [customerPhone, setCustomerPhone] = useState<string>('');
+
   // Tunai state
   const [cashGiven, setCashGiven] = useState<number>(0);
 
@@ -82,6 +87,8 @@ export const CheckoutModal: React.FC = () => {
       setIsVerifiedByCashier(false);
       setCustomProofUpload(null);
       setSelectedProofUrl(SAMPLE_PROOFS[0].url);
+      setCustomerName('');
+      setCustomerPhone('');
       // Reset to default method
       setSelectedMethod(defaultMethod || null);
     }
@@ -106,7 +113,7 @@ export const CheckoutModal: React.FC = () => {
     try {
       confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
     } catch (e) { /* ignore */ }
-    createCashTransaction(cashGiven, selectedMethod.name);
+    createCashTransaction(cashGiven, selectedMethod.name, customerName, customerPhone);
   };
 
   // Handle Transfer Direct Confirm
@@ -121,7 +128,7 @@ export const CheckoutModal: React.FC = () => {
     }
     
     const proof = customProofUpload || selectedProofUrl;
-    createTransferTransaction(selectedMethod.name, selectedMethod.name, proof, directConfirm);
+    createTransferTransaction(selectedMethod.name, selectedMethod.name, proof, directConfirm, customerName, customerPhone);
   };
 
   // Quick cash buttons
@@ -170,6 +177,41 @@ export const CheckoutModal: React.FC = () => {
           >
             <X className="w-6 h-6" />
           </button>
+        </div>
+
+        {/* ===== CUSTOMER INFO SECTION ===== */}
+        <div className="px-5 pt-4 pb-3 bg-slate-50 border-b border-slate-200 shrink-0">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2.5">
+            Data Pelanggan <span className="text-slate-400 font-normal normal-case">(opsional — untuk invoice & kirim WhatsApp)</span>
+          </p>
+          <div className="flex gap-3">
+            {/* Nama Pelanggan */}
+            <div className="flex-1 relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                <User className="w-4 h-4" />
+              </div>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Nama pelanggan..."
+                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 rounded-xl text-sm text-slate-800 font-medium outline-none transition-all placeholder:text-slate-400"
+              />
+            </div>
+            {/* Nomor HP */}
+            <div className="flex-1 relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                <Phone className="w-4 h-4" />
+              </div>
+              <input
+                type="tel"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder="08xx-xxxx-xxxx"
+                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 rounded-xl text-sm text-slate-800 font-medium outline-none transition-all placeholder:text-slate-400"
+              />
+            </div>
+          </div>
         </div>
 
         {/* ===== DYNAMIC PAYMENT METHOD SELECTOR ===== */}

@@ -8,7 +8,11 @@ const __dirname = dirname(__filename);
 
 dotenv.config({ path: join(__dirname, '../.env') });
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_gtfYruN0hi8d@ep-super-mouse-b3uxrazw-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  console.warn('⚠️ WARNING: DATABASE_URL environment variable is not defined.');
+}
 
 const { Pool } = pg;
 
