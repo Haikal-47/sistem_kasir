@@ -151,6 +151,16 @@ export const DashboardPage: React.FC = () => {
                   <span>Selesai / Absen Pulang</span>
                 </button>
               )}
+
+              {/* Tombol Reset Data Kasir */}
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className="py-3 px-4 bg-slate-800 hover:bg-rose-900/80 text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-700/50 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                title="Reset semua data kasir ke awal (seperti toko baru)"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Data</span>
+              </button>
             </>
           )}
 
@@ -675,6 +685,71 @@ export const DashboardPage: React.FC = () => {
                 Tutup Pratinjau
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Reset Data Kasir */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center p-4" onClick={() => { setShowResetConfirm(false); setResetDone(false); }}>
+          <div className="bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-200" onClick={e => e.stopPropagation()}>
+            {resetDone ? (
+              <div className="p-8 text-center">
+                <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h3 className="text-base font-black text-slate-900 mb-1">Data Berhasil Direset!</h3>
+                <p className="text-xs text-slate-500 mb-5">Semua riwayat transaksi & absensi lokal telah dihapus. Sistem siap digunakan dari awal.</p>
+                <button
+                  onClick={() => { setShowResetConfirm(false); setResetDone(false); }}
+                  className="w-full py-2.5 bg-slate-900 text-white rounded-xl text-sm font-bold"
+                >
+                  Tutup
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="p-5 bg-rose-50 border-b border-rose-100 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
+                    <Trash2 className="w-5 h-5 text-rose-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-rose-900">Reset Data Kasir</h3>
+                    <p className="text-xs text-rose-600">Seperti toko baru dari awal</p>
+                  </div>
+                </div>
+                <div className="p-5 space-y-3">
+                  <p className="text-xs text-slate-700 leading-relaxed">
+                    Tindakan ini akan <strong className="text-rose-600">menghapus semua data lokal kasir</strong>:
+                  </p>
+                  <ul className="text-xs text-slate-600 space-y-1.5">
+                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />Riwayat transaksi lokal</li>
+                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />Data absensi hari ini</li>
+                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />Keranjang belanja aktif</li>
+                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />Kode sesi POS</li>
+                  </ul>
+                  <p className="text-[11px] text-slate-400">Produk & pengaturan toko tidak akan terpengaruh.</p>
+                </div>
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2">
+                  <button
+                    onClick={() => { setShowResetConfirm(false); }}
+                    className="flex-1 py-2.5 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={() => {
+                      resetKasirData();
+                      setResetDone(true);
+                    }}
+                    className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Ya, Reset Sekarang</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
