@@ -45,7 +45,14 @@ export const DashboardPage: React.FC = () => {
 
   useEffect(() => {
     fetchTodaySummary();
-  }, [fetchTodaySummary]);
+    if (!isSuperAdmin) return;
+    // Polling setiap 30 detik untuk update status kasir di dashboard admin
+    const interval = setInterval(() => {
+      fetchTodaySummary();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchTodaySummary, isSuperAdmin]);
+
 
   // Transaksi yang ditampilkan:
   // Kasir: hanya transaksi yang terikat dengan ID sesi absensi shift aktif saat ini
@@ -161,17 +168,27 @@ export const DashboardPage: React.FC = () => {
                   STATUS KASIR HARI INI
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Monitoring absensi dan saldo kas harian kasir Gusti secara realtime
+                  Monitoring absensi dan saldo kas harian kasir {todaySummary?.cashierName || 'Gusti'} secara realtime
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setActiveTab('laporan')}
-              className="text-xs font-bold text-brand-600 hover:text-brand-700 hover:underline flex items-center gap-1"
-            >
-              <span>Buka Laporan Absensi</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fetchTodaySummary()}
+                className="text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                title="Refresh status kasir"
+              >
+                <span>↻</span>
+                <span className="hidden sm:inline">Refresh</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('laporan')}
+                className="text-xs font-bold text-brand-600 hover:text-brand-700 hover:underline flex items-center gap-1"
+              >
+                <span>Buka Laporan Absensi</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Conditional Cashier Status View */}

@@ -308,6 +308,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [authHeaders, authToken]);
 
   const checkIn = async (): Promise<{ success: boolean; error?: string }> => {
+    // Jika tidak ada token, kasir belum login dengan benar ke backend
+    if (!authToken) {
+      return { success: false, error: 'Sesi login tidak valid. Silakan logout dan login ulang untuk absen.' };
+    }
     try {
       const res = await fetch('/api/attendance/check-in', {
         method: 'POST',
@@ -325,6 +329,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetchTodaySummary();
       return { success: true };
     } catch (err: unknown) {
+      // Network error — simpan lokal sebagai fallback darurat
+      console.error('Check-in network error, using local fallback:', err);
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
       const fallbackAtt: CashierAttendance = {
         id: `ATT-${Date.now()}`,
@@ -343,6 +349,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true };
     }
   };
+
 
   const checkOut = async (actualCash: number, note?: string): Promise<{ success: boolean; error?: string }> => {
     try {
