@@ -245,9 +245,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [todaySummary, setTodaySummary] = useState<any>(null);
 
   const authHeaders = useCallback(() => {
+    const token = authToken || sessionStorage.getItem('pos_auth_token') || '';
     return {
       'Content-Type': 'application/json',
-      ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
     };
   }, [authToken]);
 
@@ -293,10 +294,14 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [authHeaders, authToken]);
 
   const fetchTodaySummary = useCallback(async () => {
-    if (!authToken) return; // Jangan fetch sebelum login
+    const token = authToken || sessionStorage.getItem('pos_auth_token') || '';
+    if (!token) return; // Jangan fetch sebelum login
     try {
       const res = await fetch('/api/attendance/summary-today', {
-        headers: authHeaders()
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
       });
       if (res.ok) {
         const data = await res.json();
@@ -305,7 +310,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.warn('Failed to fetch today summary:', err);
     }
-  }, [authHeaders, authToken]);
+  }, [authToken]);
 
   const checkIn = async (): Promise<{ success: boolean; error?: string }> => {
     // Jika tidak ada token, kasir belum login dengan benar ke backend
@@ -672,13 +677,16 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isSuperAdmin, authToken, fetchUsers]);
 
-  // Sync attendance state when logged in as Kasir
+  // Sync attendance state when logged in (Kasir & Admin)
   useEffect(() => {
-    if (authToken && currentUser && currentUser.role !== 'super_admin') {
-      refreshAttendance();
+    const token = authToken || sessionStorage.getItem('pos_auth_token');
+    if (token && currentUser) {
+      if (currentUser.role !== 'super_admin') {
+        refreshAttendance();
+      }
       fetchTodaySummary();
     }
-  }, [authToken, currentUser?.id, refreshAttendance, fetchTodaySummary]);
+  }, [authToken, currentUser?.id, currentUser?.role, refreshAttendance, fetchTodaySummary]);
 
   // Sync to localStorage
   useEffect(() => {

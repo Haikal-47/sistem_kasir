@@ -170,21 +170,29 @@ const getJakartaDateString = () => {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
 };
 
-const formatAttendanceRow = (r, stats = null) => ({
-  id: r.id,
-  userId: r.user_id,
-  cashierName: r.cashier_name || r.name || 'Gusti',
-  date: r.date,
-  checkIn: r.check_in,
-  checkOut: r.check_out || null,
-  openingCash: parseFloat(r.opening_cash || 500000),
-  expectedCash: r.expected_cash != null ? parseFloat(r.expected_cash) : (stats?.expectedCash != null ? stats.expectedCash : parseFloat(r.opening_cash || 500000)),
-  actualCash: r.actual_cash != null ? parseFloat(r.actual_cash) : null,
-  cashDifference: r.cash_difference != null ? parseFloat(r.cash_difference) : null,
-  status: r.status,
-  note: r.note || null,
-  stats: stats
-});
+const formatAttendanceRow = (r, stats = null) => {
+  let dateStr = r.date;
+  if (r.date instanceof Date) {
+    dateStr = r.date.toISOString().slice(0, 10);
+  } else if (typeof r.date === 'string' && r.date.includes('T')) {
+    dateStr = r.date.slice(0, 10);
+  }
+  return {
+    id: r.id,
+    userId: r.user_id,
+    cashierName: r.cashier_name || r.name || 'Gusti',
+    date: dateStr,
+    checkIn: r.check_in,
+    checkOut: r.check_out || null,
+    openingCash: parseFloat(r.opening_cash || 500000),
+    expectedCash: r.expected_cash != null ? parseFloat(r.expected_cash) : (stats?.expectedCash != null ? stats.expectedCash : parseFloat(r.opening_cash || 500000)),
+    actualCash: r.actual_cash != null ? parseFloat(r.actual_cash) : null,
+    cashDifference: r.cash_difference != null ? parseFloat(r.cash_difference) : null,
+    status: r.status,
+    note: r.note || null,
+    stats: stats
+  };
+};
 
 // GET /api/attendance/today — Kasir/Admin melihat status absensi hari ini
 router.get('/attendance/today', async (req, res) => {
