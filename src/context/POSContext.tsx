@@ -184,7 +184,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const hasOldGroceryTx = Array.isArray(parsed) && parsed.some((t: Transaction) =>
           t.items?.some(it => it.name?.toLowerCase().includes('aqua') || it.name?.toLowerCase().includes('indomie'))
         );
-        if (!hasOldGroceryTx && parsed.length > 0) {
+        const hasOldDummyTx = Array.isArray(parsed) && parsed.some((t: Transaction) =>
+          t.id === 'TRX-101' || t.invoiceNumber?.startsWith('INV/20260919')
+        );
+        if (!hasOldGroceryTx && !hasOldDummyTx && parsed.length > 0) {
           return parsed;
         }
       } catch (e) { console.error(e); }
@@ -639,6 +642,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           if (Array.isArray(txData)) {
             setTransactions(txData);
+            localStorage.setItem('pos_transactions', JSON.stringify(txData));
           }
           if (cashierRes.ok) {
             const cashierData = await cashierRes.json();
