@@ -252,6 +252,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [authToken]);
 
   const refreshAttendance = useCallback(async () => {
+    if (!authToken) return; // Jangan fetch sebelum login
     try {
       setIsAttendanceLoading(true);
       const res = await fetch('/api/attendance/today', {
@@ -289,9 +290,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setIsAttendanceLoading(false);
     }
-  }, [authHeaders]);
+  }, [authHeaders, authToken]);
 
   const fetchTodaySummary = useCallback(async () => {
+    if (!authToken) return; // Jangan fetch sebelum login
     try {
       const res = await fetch('/api/attendance/summary-today', {
         headers: authHeaders()
@@ -303,7 +305,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.warn('Failed to fetch today summary:', err);
     }
-  }, [authHeaders]);
+  }, [authHeaders, authToken]);
 
   const checkIn = async (): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -645,8 +647,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           }
           setIsDbConnected(true);
-          refreshAttendance();
-          fetchTodaySummary();
+          // Attendance dipanggil dari useEffect yang watch authToken, bukan di sini
         }
       } catch (err) {
         console.warn('Backend Neon API not reached, using local fallback:', err);
@@ -655,7 +656,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     loadFromNeonDb();
-  }, [refreshAttendance, fetchTodaySummary]);
+  }, []);
 
   // Fetch users if logged in as Admin
   useEffect(() => {
