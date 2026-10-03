@@ -189,21 +189,29 @@ const formatAttendanceRow = (r, stats = null) => ({
   stats: stats
 });
 
-// GET /api/attendance/today — Kasir melihat status absensi hari ini
+// GET /api/attendance/today — Kasir/Admin melihat status absensi hari ini
 app.get('/api/attendance/today', async (req, res) => {
   try {
     if (!req.user) return res.status(401).json({ error: 'Sesi tidak valid.' });
     const today = getJakartaDateString();
+    const isSuperAdmin = req.user.role === 'super_admin';
     const userId = req.user.id;
 
-    const result = await pool.query(
-      `SELECT ca.*, u.name AS cashier_name
-       FROM cashier_attendances ca
-       JOIN users u ON u.id = ca.user_id
-       WHERE ca.user_id = $1 AND ca.date = $2
-       LIMIT 1`,
-      [userId, today]
-    );
+    const query = isSuperAdmin
+      ? `SELECT ca.*, COALESCE(ca.cashier_name, u.name, 'Gusti') AS cashier_name
+         FROM cashier_attendances ca
+         LEFT JOIN users u ON u.id = ca.user_id
+         WHERE ca.date = $1
+         ORDER BY ca.check_in DESC
+         LIMIT 1`
+      : `SELECT ca.*, COALESCE(ca.cashier_name, u.name, 'Gusti') AS cashier_name
+         FROM cashier_attendances ca
+         LEFT JOIN users u ON u.id = ca.user_id
+         WHERE ca.user_id = $1 AND ca.date = $2
+         LIMIT 1`;
+    const params = isSuperAdmin ? [today] : [userId, today];
+
+    const result = await pool.query(query, params);
 
     if (result.rows.length === 0) {
       return res.json({ status: 'not_started', attendance: null });
@@ -435,7 +443,7 @@ app.post('/api/attendance/check-out', async (req, res) => {
   }
 });
 
-// GET /api/attendance/summary-today — Ringkasan kas hari ini (untuk Dashboard kasir)
+// GET /api/attendance/summary-today — Ringkasan kas hari ini (untuk Dashboard kasir & admin)
 app.get('/api/attendance/summary-today', async (req, res) => {
   try {
     if (!req.user) return res.status(401).json({ error: 'Sesi tidak valid.' });
@@ -444,13 +452,35 @@ app.get('/api/attendance/summary-today', async (req, res) => {
     const userId = req.user.role === 'super_admin' ? null : req.user.id;
 
     const query = userId
-      ? 'SELECT ca.*, u.name AS cashier_name FROM cashier_attendances ca JOIN users u ON u.id = ca.user_id WHERE ca.user_id = $1 AND ca.date = $2 LIMIT 1'
-      : 'SELECT ca.*, u.name AS cashier_name FROM cashier_attendances ca JOIN users u ON u.id = ca.user_id WHERE ca.date = $1 ORDER BY ca.check_in ASC LIMIT 1';
+      ? `SELECT ca.*, COALESCE(ca.cashier_name, u.name, 'Gusti') AS cashier_name
+         FROM cashier_attendances ca
+         LEFT JOIN users u ON u.id = ca.user_id
+         WHERE ca.user_id = $1 AND ca.date = $2
+         LIMIT 1`
+      : `SELECT ca.*, COALESCE(ca.cashier_name, u.name, 'Gusti') AS cashier_name
+         FROM cashier_attendances ca
+         LEFT JOIN users u ON u.id = ca.user_id
+         WHERE ca.date = $1
+         ORDER BY ca.check_in DESC
+         LIMIT 1`;
     const params = userId ? [userId, today] : [today];
 
     const result = await pool.query(query, params);
     if (result.rows.length === 0) {
-      return res.json({ status: 'not_started', attendance: null, stats: null });
+      return res.json({
+        status: 'not_started',
+        cashierName: 'Gusti',
+        date: today,
+        openingCash: 500000,
+        revenueToday: 0,
+        cashSales: 0,
+        expectedCash: 500000,
+        actualCash: null,
+        cashDifference: null,
+        note: null,
+        attendance: null,
+        stats: null
+      });
     }
 
     const row = result.rows[0];
@@ -475,10 +505,28 @@ app.get('/api/attendance/summary-today', async (req, res) => {
       else transferSales += amount;
     }
 
-    const expectedCash = parseFloat(row.opening_cash || 500000) + cashSales;
+    const openingCash = parseFloat(row.opening_cash || 500000);
+    const expectedCash = openingCash + cashSales;
     const stats = { totalTransactions: totalTx, totalRevenue, cashSales, qrisSales, transferSales, otherSales: 0, expectedCash };
 
-    res.json({ status: row.status, attendance: formatAttendanceRow(row, stats), stats });
+    res.json({
+      status: row.status,
+      cashierName: row.cashier_name || 'Gusti',
+      date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : row.date,
+      checkIn: row.check_in,
+      checkOut: row.check_out,
+      openingCash,
+      revenueToday: totalRevenue,
+      cashSales,
+      qrisSales,
+      transferSales,
+      expectedCash: row.status === 'completed' && row.expected_cash != null ? parseFloat(row.expected_cash) : expectedCash,
+      actualCash: row.actual_cash != null ? parseFloat(row.actual_cash) : null,
+      cashDifference: row.cash_difference != null ? parseFloat(row.cash_difference) : null,
+      note: row.note || null,
+      attendance: formatAttendanceRow(row, stats),
+      stats
+    });
   } catch (error) {
     console.error('Error in GET /api/attendance/summary-today:', error);
     res.status(500).json({ error: error.message });

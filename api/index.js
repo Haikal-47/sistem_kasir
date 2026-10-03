@@ -186,21 +186,29 @@ const formatAttendanceRow = (r, stats = null) => ({
   stats: stats
 });
 
-// GET /api/attendance/today
+// GET /api/attendance/today — Kasir/Admin melihat status absensi hari ini
 router.get('/attendance/today', async (req, res) => {
   try {
     if (!req.user) return res.status(401).json({ error: 'Sesi tidak valid.' });
     const today = getJakartaDateString();
+    const isSuperAdmin = req.user.role === 'super_admin';
     const userId = req.user.id;
 
-    const result = await pool.query(
-      `SELECT ca.*, u.name AS cashier_name
-       FROM cashier_attendances ca
-       JOIN users u ON u.id = ca.user_id
-       WHERE ca.user_id = $1 AND ca.date = $2
-       LIMIT 1`,
-      [userId, today]
-    );
+    const query = isSuperAdmin
+      ? `SELECT ca.*, COALESCE(ca.cashier_name, u.name, 'Gusti') AS cashier_name
+         FROM cashier_attendances ca
+         LEFT JOIN users u ON u.id = ca.user_id
+         WHERE ca.date = $1
+         ORDER BY ca.check_in DESC
+         LIMIT 1`
+      : `SELECT ca.*, COALESCE(ca.cashier_name, u.name, 'Gusti') AS cashier_name
+         FROM cashier_attendances ca
+         LEFT JOIN users u ON u.id = ca.user_id
+         WHERE ca.user_id = $1 AND ca.date = $2
+         LIMIT 1`;
+    const params = isSuperAdmin ? [today] : [userId, today];
+
+    const result = await pool.query(query, params);
 
     if (result.rows.length === 0) {
       return res.json({ status: 'not_started', attendance: null });
@@ -418,7 +426,7 @@ router.post('/attendance/check-out', async (req, res) => {
   }
 });
 
-// GET /api/attendance/summary-today
+// GET /api/attendance/summary-today — Ringkasan kas hari ini (untuk Dashboard kasir & admin)
 router.get('/attendance/summary-today', async (req, res) => {
   try {
     if (!req.user) return res.status(401).json({ error: 'Sesi tidak valid.' });
@@ -427,13 +435,35 @@ router.get('/attendance/summary-today', async (req, res) => {
     const userId = req.user.role === 'super_admin' ? null : req.user.id;
 
     const query = userId
-      ? 'SELECT ca.*, u.name AS cashier_name FROM cashier_attendances ca JOIN users u ON u.id = ca.user_id WHERE ca.user_id = $1 AND ca.date = $2 LIMIT 1'
-      : 'SELECT ca.*, u.name AS cashier_name FROM cashier_attendances ca JOIN users u ON u.id = ca.user_id WHERE ca.date = $1 ORDER BY ca.check_in ASC LIMIT 1';
+      ? `SELECT ca.*, COALESCE(ca.cashier_name, u.name, 'Gusti') AS cashier_name
+         FROM cashier_attendances ca
+         LEFT JOIN users u ON u.id = ca.user_id
+         WHERE ca.user_id = $1 AND ca.date = $2
+         LIMIT 1`
+      : `SELECT ca.*, COALESCE(ca.cashier_name, u.name, 'Gusti') AS cashier_name
+         FROM cashier_attendances ca
+         LEFT JOIN users u ON u.id = ca.user_id
+         WHERE ca.date = $1
+         ORDER BY ca.check_in DESC
+         LIMIT 1`;
     const params = userId ? [userId, today] : [today];
 
     const result = await pool.query(query, params);
     if (result.rows.length === 0) {
-      return res.json({ status: 'not_started', attendance: null, stats: null });
+      return res.json({
+        status: 'not_started',
+        cashierName: 'Gusti',
+        date: today,
+        openingCash: 500000,
+        revenueToday: 0,
+        cashSales: 0,
+        expectedCash: 500000,
+        actualCash: null,
+        cashDifference: null,
+        note: null,
+        attendance: null,
+        stats: null
+      });
     }
 
     const row = result.rows[0];
@@ -458,10 +488,28 @@ router.get('/attendance/summary-today', async (req, res) => {
       else transferSales += amount;
     }
 
-    const expectedCash = parseFloat(row.opening_cash || 500000) + cashSales;
+    const openingCash = parseFloat(row.opening_cash || 500000);
+    const expectedCash = openingCash + cashSales;
     const stats = { totalTransactions: totalTx, totalRevenue, cashSales, qrisSales, transferSales, otherSales: 0, expectedCash };
 
-    res.json({ status: row.status, attendance: formatAttendanceRow(row, stats), stats });
+    res.json({
+      status: row.status,
+      cashierName: row.cashier_name || 'Gusti',
+      date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : row.date,
+      checkIn: row.check_in,
+      checkOut: row.check_out,
+      openingCash,
+      revenueToday: totalRevenue,
+      cashSales,
+      qrisSales,
+      transferSales,
+      expectedCash: row.status === 'completed' && row.expected_cash != null ? parseFloat(row.expected_cash) : expectedCash,
+      actualCash: row.actual_cash != null ? parseFloat(row.actual_cash) : null,
+      cashDifference: row.cash_difference != null ? parseFloat(row.cash_difference) : null,
+      note: row.note || null,
+      attendance: formatAttendanceRow(row, stats),
+      stats
+    });
   } catch (error) {
     console.error('Error in GET /api/attendance/summary-today:', error);
     res.status(500).json({ error: error.message });
@@ -1115,440 +1163,6 @@ router.patch('/transactions/:id/cancel', async (req, res) => {
   }
 });
 
-// ── Cashier Profile ────────────────────────────────────────────────────────
-
-// ─── CASHIER ATTENDANCE & CASH CLOSING ─────────────────────────────────────
-
-// GET /api/attendance/today - Get current attendance & stats for today
-router.get('/attendance/today', async (req, res) => {
-  try {
-    const today = getJakartaDate();
-    const targetUserId = (req.user && req.user.role === 'kasir') ? req.user.id : 'USR-KAS-01';
-
-    const attRes = await pool.query(
-      `SELECT a.*, u.name as cashier_name 
-       FROM cashier_attendances a 
-       JOIN users u ON u.id = a.user_id 
-       WHERE a.user_id = $1 AND a.date = $2`,
-      [targetUserId, today]
-    );
-
-    if (attRes.rows.length === 0) {
-      const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [targetUserId]);
-      const cashierName = userRes.rows[0]?.name || 'Gusti';
-      return res.json({
-        status: 'not_started',
-        date: today,
-        cashierName,
-        openingCash: 500000,
-        attendance: null
-      });
-    }
-
-    const a = attRes.rows[0];
-
-    const txRes = await pool.query(
-      `SELECT * FROM transactions 
-       WHERE (attendance_id = $1 OR (attendance_id IS NULL AND DATE(date AT TIME ZONE 'Asia/Jakarta') = $2))
-         AND status != 'BATAL'`,
-      [a.id, today]
-    );
-
-    let totalTransactions = 0;
-    let totalRevenue = 0;
-    let cashSales = 0;
-    let qrisSales = 0;
-    let transferSales = 0;
-    let otherSales = 0;
-
-    for (const tx of txRes.rows) {
-      totalTransactions += 1;
-      const amt = parseFloat(tx.total);
-      totalRevenue += amt;
-      const method = (tx.payment_method || '').toLowerCase();
-      if (method === 'tunai' || method.includes('tunai') || method.includes('cash')) {
-        cashSales += amt;
-      } else if (method.includes('qris')) {
-        qrisSales += amt;
-      } else if (method.includes('transfer') || method.includes('bca') || method.includes('bni') || method.includes('bri') || method.includes('mandiri')) {
-        transferSales += amt;
-      } else {
-        otherSales += amt;
-      }
-    }
-
-    const openingCash = parseFloat(a.opening_cash) || 500000;
-    const computedExpectedCash = openingCash + cashSales;
-
-    res.json({
-      status: a.status,
-      date: a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date,
-      cashierName: a.cashier_name,
-      openingCash,
-      attendance: {
-        id: a.id,
-        userId: a.user_id,
-        cashierName: a.cashier_name,
-        date: a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date,
-        checkIn: a.check_in ? (a.check_in.toISOString ? a.check_in.toISOString() : a.check_in) : null,
-        checkOut: a.check_out ? (a.check_out.toISOString ? a.check_out.toISOString() : a.check_out) : null,
-        openingCash,
-        expectedCash: a.status === 'completed' && a.expected_cash !== null ? parseFloat(a.expected_cash) : computedExpectedCash,
-        actualCash: a.actual_cash !== null ? parseFloat(a.actual_cash) : null,
-        cashDifference: a.cash_difference !== null ? parseFloat(a.cash_difference) : null,
-        status: a.status,
-        note: a.note,
-        stats: {
-          totalTransactions,
-          totalRevenue,
-          cashSales,
-          qrisSales,
-          transferSales,
-          otherSales,
-          expectedCash: computedExpectedCash
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching today attendance:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/attendance/check-in - Gusti starts work day
-router.post('/attendance/check-in', async (req, res) => {
-  try {
-    const today = getJakartaDate();
-    const targetUserId = (req.user && req.user.role === 'kasir') ? req.user.id : 'USR-KAS-01';
-
-    const existing = await pool.query(
-      'SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2',
-      [targetUserId, today]
-    );
-
-    if (existing.rows.length > 0) {
-      return res.status(400).json({
-        error: 'Absen masuk sudah dilakukan untuk hari ini. Tidak dapat melakukan absen ganda.',
-        attendance: existing.rows[0]
-      });
-    }
-
-    const attId = `ATT-${Date.now()}`;
-    const insertRes = await pool.query(
-      `INSERT INTO cashier_attendances (
-        id, user_id, date, check_in, opening_cash, status
-      ) VALUES ($1, $2, $3, CURRENT_TIMESTAMP, 500000, 'working')
-      RETURNING *`,
-      [attId, targetUserId, today]
-    );
-
-    const a = insertRes.rows[0];
-    const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [targetUserId]);
-    const cashierName = userRes.rows[0]?.name || 'Gusti';
-
-    res.status(201).json({
-      success: true,
-      status: 'working',
-      attendance: {
-        id: a.id,
-        userId: a.user_id,
-        cashierName,
-        date: a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date,
-        checkIn: a.check_in ? (a.check_in.toISOString ? a.check_in.toISOString() : a.check_in) : null,
-        checkOut: null,
-        openingCash: parseFloat(a.opening_cash),
-        expectedCash: parseFloat(a.opening_cash),
-        actualCash: null,
-        cashDifference: null,
-        status: 'working',
-        note: null,
-        stats: {
-          totalTransactions: 0,
-          totalRevenue: 0,
-          cashSales: 0,
-          qrisSales: 0,
-          transferSales: 0,
-          otherSales: 0,
-          expectedCash: parseFloat(a.opening_cash)
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error on check-in:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/attendance/check-out - Tutup Kas Harian & Absen Pulang
-router.post('/attendance/check-out', async (req, res) => {
-  try {
-    const today = getJakartaDate();
-    const targetUserId = (req.user && req.user.role === 'kasir') ? req.user.id : 'USR-KAS-01';
-    const { actualCash, note } = req.body;
-
-    if (actualCash === undefined || actualCash === null || isNaN(Number(actualCash))) {
-      return res.status(400).json({ error: 'Uang kas aktual di laci wajib dimasukkan.' });
-    }
-
-    const attRes = await pool.query(
-      `SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2`,
-      [targetUserId, today]
-    );
-
-    if (attRes.rows.length === 0) {
-      return res.status(400).json({ error: 'Belum melakukan Absen Masuk untuk hari ini.' });
-    }
-
-    const a = attRes.rows[0];
-    if (a.status === 'completed') {
-      return res.status(400).json({ error: 'Hari kerja hari ini sudah selesai (sudah tutup kas).' });
-    }
-
-    const txRes = await pool.query(
-      `SELECT * FROM transactions 
-       WHERE (attendance_id = $1 OR (attendance_id IS NULL AND DATE(date AT TIME ZONE 'Asia/Jakarta') = $2))
-         AND status != 'BATAL'`,
-      [a.id, today]
-    );
-
-    let cashSales = 0;
-    for (const tx of txRes.rows) {
-      const method = (tx.payment_method || '').toLowerCase();
-      if (method === 'tunai' || method.includes('tunai') || method.includes('cash')) {
-        cashSales += parseFloat(tx.total);
-      }
-    }
-
-    const openingCash = parseFloat(a.opening_cash) || 500000;
-    const expectedCash = openingCash + cashSales;
-    const parsedActualCash = parseFloat(actualCash);
-    const cashDifference = parsedActualCash - expectedCash;
-
-    if (cashDifference !== 0 && (!note || note.trim().length === 0)) {
-      return res.status(400).json({
-        error: `Terdapat selisih kas sebesar ${cashDifference < 0 ? '-' : '+'}Rp ${Math.abs(cashDifference).toLocaleString('id-ID')}. Keterangan selisih wajib diisi!`
-      });
-    }
-
-    const updateRes = await pool.query(
-      `UPDATE cashier_attendances
-       SET check_out = CURRENT_TIMESTAMP,
-           expected_cash = $1,
-           actual_cash = $2,
-           cash_difference = $3,
-           status = 'completed',
-           note = $4,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5
-       RETURNING *`,
-      [expectedCash, parsedActualCash, cashDifference, note ? note.trim() : null, a.id]
-    );
-
-    const updated = updateRes.rows[0];
-    const userRes = await pool.query('SELECT name FROM users WHERE id = $1', [targetUserId]);
-    const cashierName = userRes.rows[0]?.name || 'Gusti';
-
-    res.json({
-      success: true,
-      status: 'completed',
-      attendance: {
-        id: updated.id,
-        userId: updated.user_id,
-        cashierName,
-        date: updated.date.toISOString ? updated.date.toISOString().slice(0, 10) : updated.date,
-        checkIn: updated.check_in ? (updated.check_in.toISOString ? updated.check_in.toISOString() : updated.check_in) : null,
-        checkOut: updated.check_out ? (updated.check_out.toISOString ? updated.check_out.toISOString() : updated.check_out) : null,
-        openingCash,
-        expectedCash,
-        actualCash: parsedActualCash,
-        cashDifference,
-        status: 'completed',
-        note: updated.note
-      }
-    });
-  } catch (error) {
-    console.error('Error on check-out:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET /api/attendance/summary-today - Status summary for Admin Dashboard card
-router.get('/attendance/summary-today', async (req, res) => {
-  try {
-    const today = getJakartaDate();
-    const targetUserId = 'USR-KAS-01';
-
-    const attRes = await pool.query(
-      `SELECT a.*, u.name as cashier_name 
-       FROM cashier_attendances a 
-       JOIN users u ON u.id = a.user_id 
-       WHERE a.user_id = $1 AND a.date = $2`,
-      [targetUserId, today]
-    );
-
-    if (attRes.rows.length === 0) {
-      return res.json({
-        status: 'not_started',
-        cashierName: 'Gusti',
-        date: today,
-        openingCash: 500000,
-        revenueToday: 0
-      });
-    }
-
-    const a = attRes.rows[0];
-    const txRes = await pool.query(
-      `SELECT * FROM transactions 
-       WHERE (attendance_id = $1 OR (attendance_id IS NULL AND DATE(date AT TIME ZONE 'Asia/Jakarta') = $2))
-         AND status != 'BATAL'`,
-      [a.id, today]
-    );
-
-    let totalRevenue = 0;
-    let cashSales = 0;
-    for (const tx of txRes.rows) {
-      const amt = parseFloat(tx.total);
-      totalRevenue += amt;
-      const method = (tx.payment_method || '').toLowerCase();
-      if (method === 'tunai' || method.includes('tunai') || method.includes('cash')) {
-        cashSales += amt;
-      }
-    }
-
-    const openingCash = parseFloat(a.opening_cash) || 500000;
-    const expectedCash = openingCash + cashSales;
-
-    res.json({
-      status: a.status,
-      cashierName: a.cashier_name,
-      date: a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date,
-      checkIn: a.check_in ? (a.check_in.toISOString ? a.check_in.toISOString() : a.check_in) : null,
-      checkOut: a.check_out ? (a.check_out.toISOString ? a.check_out.toISOString() : a.check_out) : null,
-      openingCash,
-      revenueToday: totalRevenue,
-      cashSales,
-      expectedCash: a.status === 'completed' && a.expected_cash !== null ? parseFloat(a.expected_cash) : expectedCash,
-      actualCash: a.actual_cash !== null ? parseFloat(a.actual_cash) : null,
-      cashDifference: a.cash_difference !== null ? parseFloat(a.cash_difference) : null,
-      note: a.note
-    });
-  } catch (error) {
-    console.error('Error fetching today summary:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET /api/attendance/reports - Admin Only Laporan Absensi & Kas Harian
-router.get('/attendance/reports', requireAdmin, async (req, res) => {
-  try {
-    const { period, startDate, endDate } = req.query;
-    const today = getJakartaDate();
-
-    let queryDateClause = '';
-    const params = [];
-
-    if (period === 'today') {
-      params.push(today);
-      queryDateClause = `WHERE a.date = $${params.length}`;
-    } else if (period === 'yesterday') {
-      const d = new Date();
-      d.setDate(d.getDate() - 1);
-      const yesterdayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(d);
-      params.push(yesterdayStr);
-      queryDateClause = `WHERE a.date = $${params.length}`;
-    } else if (period === 'this_week') {
-      const now = new Date();
-      const day = now.getDay() || 7;
-      now.setDate(now.getDate() - day + 1);
-      const mondayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(now);
-      params.push(mondayStr, today);
-      queryDateClause = `WHERE a.date >= $${params.length - 1} AND a.date <= $${params.length}`;
-    } else if (period === 'this_month') {
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      const firstDayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(firstDay);
-      params.push(firstDayStr, today);
-      queryDateClause = `WHERE a.date >= $${params.length - 1} AND a.date <= $${params.length}`;
-    } else if (startDate && endDate) {
-      params.push(startDate, endDate);
-      queryDateClause = `WHERE a.date >= $${params.length - 1} AND a.date <= $${params.length}`;
-    }
-
-    const attRes = await pool.query(
-      `SELECT a.*, u.name as cashier_name
-       FROM cashier_attendances a
-       JOIN users u ON u.id = a.user_id
-       ${queryDateClause}
-       ORDER BY a.date DESC, a.check_in DESC`,
-      params
-    );
-
-    const reports = [];
-    for (const a of attRes.rows) {
-      const dateStr = a.date.toISOString ? a.date.toISOString().slice(0, 10) : a.date;
-      const txRes = await pool.query(
-        `SELECT * FROM transactions 
-         WHERE (attendance_id = $1 OR (attendance_id IS NULL AND DATE(date AT TIME ZONE 'Asia/Jakarta') = $2))
-           AND status != 'BATAL'`,
-        [a.id, dateStr]
-      );
-
-      let totalTx = 0;
-      let totalRev = 0;
-      let cashAmt = 0;
-      let qrisAmt = 0;
-      let transferAmt = 0;
-      let otherAmt = 0;
-
-      for (const tx of txRes.rows) {
-        totalTx += 1;
-        const amt = parseFloat(tx.total);
-        totalRev += amt;
-        const method = (tx.payment_method || '').toLowerCase();
-        if (method === 'tunai' || method.includes('tunai') || method.includes('cash')) {
-          cashAmt += amt;
-        } else if (method.includes('qris')) {
-          qrisAmt += amt;
-        } else if (method.includes('transfer') || method.includes('bca') || method.includes('bni') || method.includes('bri') || method.includes('mandiri')) {
-          transferAmt += amt;
-        } else {
-          otherAmt += amt;
-        }
-      }
-
-      const openingCash = parseFloat(a.opening_cash) || 500000;
-      const calculatedExpected = openingCash + cashAmt;
-      const actualCash = a.actual_cash !== null ? parseFloat(a.actual_cash) : null;
-      const diff = a.cash_difference !== null ? parseFloat(a.cash_difference) : (actualCash !== null ? actualCash - calculatedExpected : null);
-
-      reports.push({
-        id: a.id,
-        userId: a.user_id,
-        cashierName: a.cashier_name,
-        date: dateStr,
-        checkIn: a.check_in ? (a.check_in.toISOString ? a.check_in.toISOString() : a.check_in) : null,
-        checkOut: a.check_out ? (a.check_out.toISOString ? a.check_out.toISOString() : a.check_out) : null,
-        openingCash,
-        totalTransactions: totalTx,
-        totalRevenue: totalRev,
-        cashSales: cashAmt,
-        qrisSales: qrisAmt,
-        transferSales: transferAmt,
-        otherSales: otherAmt,
-        expectedCash: a.status === 'completed' && a.expected_cash !== null ? parseFloat(a.expected_cash) : calculatedExpected,
-        actualCash,
-        cashDifference: diff,
-        status: a.status,
-        note: a.note
-      });
-    }
-
-    res.json(reports);
-  } catch (error) {
-    console.error('Error fetching attendance reports:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 router.get('/cashier', async (req, res) => {
   try {
