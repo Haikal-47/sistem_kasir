@@ -56,8 +56,8 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
         key={`${product.id}-${index}`}
         className="barcode-label-card group relative bg-white border border-slate-200/90 rounded-2xl p-2.5 flex flex-col justify-between items-center text-center shadow-xs hover:shadow-md transition-all duration-200 select-none box-border print:border-slate-400 print:rounded-none print:shadow-none"
         style={isSheet
-          ? { width: '182px', minHeight: '136px' }
-          : { width: '180px', minHeight: '116px' }
+          ? { width: '194px', minHeight: '154px' }
+          : { width: '186px', minHeight: '130px' }
         }
       >
         {/* Subtle Hangtag Punch Hole for Modern Fashion Retail Aesthetic */}
@@ -83,15 +83,15 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
           </span>
         </div>
 
-        {/* Scannable Barcode with proper Quiet Zone */}
-        <div className="w-full flex flex-col items-center justify-center py-0.5 bg-white overflow-hidden">
+        {/* Scannable Barcode with enlarged bars and proper Quiet Zone */}
+        <div className="w-full flex flex-col items-center justify-center py-1 bg-white overflow-hidden">
           <BarcodeRenderer
             value={product.barcode}
-            width={isSheet ? 1.4 : 1.3}
-            height={isSheet ? 40 : 36}
+            width={isSheet ? 1.75 : 1.6}
+            height={isSheet ? 52 : 46}
           />
           {/* Monospace Digits with wide tracking for scannability and human readability */}
-          <span className="text-[8.5px] font-mono font-bold tracking-[0.22em] text-slate-800 -mt-0.5">
+          <span className="text-[9px] font-mono font-bold tracking-[0.24em] text-slate-800 mt-0.5">
             {product.barcode}
           </span>
         </div>
