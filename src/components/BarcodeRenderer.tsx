@@ -41,7 +41,6 @@ export const BarcodeRenderer: React.FC<BarcodeRendererProps> = ({
         font: 'monospace',
         textMargin: 2,
         margin: 6, // Quiet Zone
-        background: '#ffffff',
         lineColor: '#000000',
       });
     } catch (err) {
@@ -55,7 +54,6 @@ export const BarcodeRenderer: React.FC<BarcodeRendererProps> = ({
             displayValue,
             fontSize,
             margin: 6,
-            background: '#ffffff',
             lineColor: '#000000',
           });
         }

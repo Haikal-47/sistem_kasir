@@ -90,14 +90,25 @@
     gap: 0 !important;
     justify-content: flex-start !important;
   }
-  /* Force SVG barcode bars to print black */
-  .barcode-label-card svg rect {
-    fill: #000 !important;
+  /* Force SVG barcode bars to print black without blacking out entire canvas */
+  .barcode-label-card svg {
+    background: transparent !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .barcode-label-card svg > rect:first-child {
+    display: none !important; /* Hide background rect if any */
+  }
+  .barcode-label-card svg g {
+    fill: #000000 !important;
+  }
+  .barcode-label-card svg g rect {
+    fill: #000000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .barcode-label-card svg text {
-    fill: #000 !important;
+    fill: #000000 !important;
   }
   /* A4 mode: 4 kolom, ukuran tetap per label, dengan garis potong */
   .barcode-label-card {

@@ -81,7 +81,6 @@ export const generateBarcodeSVG = (
       font: 'monospace',
       textMargin: 2,
       margin,
-      background: '#ffffff',
       lineColor: '#000000',
     });
     return new XMLSerializer().serializeToString(svg);
@@ -95,7 +94,6 @@ export const generateBarcodeSVG = (
         displayValue,
         fontSize: options?.fontSize || 10,
         margin,
-        background: '#ffffff',
         lineColor: '#000000',
       });
       return new XMLSerializer().serializeToString(svg);
