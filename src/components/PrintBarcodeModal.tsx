@@ -50,52 +50,59 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
 
   // Render individual retail barcode label
   const renderBarcodeLabel = (product: Product, index: number) => {
-    // Generate proper EAN-13 SVG barcode (print-safe, SVG fill always prints)
-    const barcodeSvg = generateEAN13SVG(product.barcode, 176, 56, false);
+    // Untuk A4: barcode lebih lebar agar scannable (170px wide, 52px tall)
+    // Untuk Thermal: sedikit lebih kecil
+    const svgW = labelFormat === 'SHEET' ? 168 : 150;
+    const svgH = labelFormat === 'SHEET' ? 50 : 46;
+    const barcodeSvg = generateEAN13SVG(product.barcode, svgW, svgH, false);
 
     return (
       <div
         key={`${product.id}-${index}`}
-        className="barcode-label-card bg-white border border-slate-300 rounded-lg p-2.5 flex flex-col justify-between items-center text-center shadow-2xs select-none box-border print:border-black print:rounded-none print:shadow-none"
-        style={{ width: '220px', minHeight: '160px' }}
+        className="barcode-label-card bg-white border border-slate-200 rounded-lg p-2 flex flex-col justify-between items-center text-center shadow-sm select-none box-border print:border-slate-400 print:rounded-none print:shadow-none"
+        style={labelFormat === 'SHEET'
+          ? { width: '178px', minHeight: '130px' }
+          : { width: '180px', minHeight: '112px' }
+        }
       >
         {/* Store & Category */}
-        <div className="w-full flex items-center justify-between border-b border-dashed border-slate-300 pb-1 text-[9px] font-bold text-slate-500 uppercase">
+        <div className="w-full flex items-center justify-between border-b border-dashed border-slate-300 pb-1 text-[8px] font-bold text-slate-500 uppercase">
           <span>ARFA FASHION</span>
-          <span className="truncate max-w-[100px] text-right">{product.category}</span>
+          <span className="truncate max-w-[90px] text-right">{product.category}</span>
         </div>
 
-        {/* Product Name — allow 2 lines so it doesn't truncate */}
-        <div className="my-1.5 w-full px-1">
-          <h4 className="font-bold text-[11px] text-slate-900 leading-snug line-clamp-2 text-center">
+        {/* Product Name */}
+        <div className="my-1 w-full px-0.5">
+          <h4 className="font-bold text-[10px] text-slate-900 leading-snug line-clamp-2 text-center">
             {product.name}
           </h4>
-          <span className="text-[9px] text-slate-500 font-medium">
-            {product.brand} • {product.unit}
+          <span className="text-[8px] text-slate-500 font-medium">
+            {product.brand}
           </span>
         </div>
 
-        {/* EAN-13 SVG Barcode — SVG fill prints correctly without "print backgrounds" */}
+        {/* EAN-13 SVG Barcode */}
         <div
-          className="w-full flex justify-center my-1"
+          className="w-full flex justify-center"
           dangerouslySetInnerHTML={{ __html: barcodeSvg }}
         />
 
         {/* Barcode digits */}
-        <span className="text-[9px] font-mono font-bold tracking-widest text-slate-900 -mt-1">
+        <span className="text-[8px] font-mono font-bold tracking-widest text-slate-900 -mt-0.5">
           {product.barcode}
         </span>
 
         {/* Price Tag */}
-        <div className="w-full pt-1.5 mt-1 border-t border-dashed border-slate-300 flex items-baseline justify-between text-slate-900">
-          <span className="text-[9px] uppercase font-bold text-slate-500">Harga:</span>
-          <span className="font-extrabold text-[13px] font-mono tracking-tight text-slate-950">
+        <div className="w-full pt-1 mt-0.5 border-t border-dashed border-slate-300 flex items-baseline justify-between text-slate-900">
+          <span className="text-[7px] uppercase font-bold text-slate-500">Harga:</span>
+          <span className="font-extrabold text-[12px] font-mono tracking-tight text-slate-950">
             {formatRupiah(product.price)}
           </span>
         </div>
       </div>
     );
   };
+
 
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
@@ -154,7 +161,7 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
               onChange={(e) => setLabelFormat(e.target.value as any)}
               className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-800 outline-hidden"
             >
-              <option value="SHEET">Lembar Stiker / A4 Grid</option>
+              <option value="SHEET">Kertas A4 Biasa (4 kolom/baris)</option>
               <option value="THERMAL">Printer Label Thermal (50x30mm)</option>
             </select>
           </div>
@@ -223,9 +230,17 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
 
         {/* Footer Actions (Hidden in Print) */}
         <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between print:hidden">
-          <span className="text-xs text-slate-500">
-            Total stiker yang akan dicetak: <strong className="text-slate-900">{targetProducts.length * copies} label</strong>
-          </span>
+          <div className="space-y-0.5">
+            <span className="text-xs text-slate-500">
+              Total stiker: <strong className="text-slate-900">{targetProducts.length * copies} label</strong>
+              {labelFormat === 'SHEET' && (
+                <span className="text-slate-400"> · sekitar {Math.ceil(targetProducts.length * copies / 16)} halaman A4</span>
+              )}
+            </span>
+            <p className="text-[10px] text-amber-600 font-medium">
+              💡 Tips: Pilih <strong>A4 / Letter</strong> di dialog print, margin <strong>Tidak Ada / None</strong>, skala <strong>100%</strong>
+            </p>
+          </div>
 
           <div className="flex gap-2">
             <button

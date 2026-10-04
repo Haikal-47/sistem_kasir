@@ -83,12 +83,14 @@
     top: 0;
     width: 100%;
     margin: 0;
-    padding: 10px;
+    padding: 8mm 6mm;
     background: white;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 0 !important;
+    justify-content: flex-start !important;
   }
-  /* Force SVG barcode bars to print black regardless of
-     browser "Print Background Graphics" setting.
-     SVG fill/stroke always prints; this is just a safety net. */
+  /* Force SVG barcode bars to print black */
   .barcode-label-card svg rect {
     fill: #000 !important;
     -webkit-print-color-adjust: exact;
@@ -97,10 +99,31 @@
   .barcode-label-card svg text {
     fill: #000 !important;
   }
-  /* Prevent label cards from splitting across pages */
+  /* A4 mode: 4 kolom, ukuran tetap per label, dengan garis potong */
   .barcode-label-card {
-    page-break-inside: avoid;
-    break-inside: avoid;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    width: 47mm !important;
+    min-height: 32mm !important;
+    max-height: 36mm !important;
+    margin: 1mm !important;
+    padding: 1.5mm !important;
+    border: 0.3mm dashed #999 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+  /* Thermal mode: full width label */
+  .barcode-label-thermal {
+    width: 48mm !important;
+    min-height: 28mm !important;
+    margin: 1mm 0 !important;
+    break-inside: avoid !important;
   }
 }
 
