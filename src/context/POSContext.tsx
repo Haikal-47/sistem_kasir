@@ -890,17 +890,28 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       alert('Akses Ditolak: Hanya role Super Admin yang dapat menambah produk baru.');
       return {} as Product;
     }
+    // Buat ID sementara untuk tampilan langsung di UI
+    const tempId = `PRD-${Date.now().toString().slice(-6)}`;
     const newProduct: Product = {
       ...data,
-      id: `PRD-${Date.now().toString().slice(-4)}`,
+      id: tempId,
     };
     setProducts(prev => [newProduct, ...prev]);
 
+    // Setelah backend membuat produk dengan ID canonical-nya, update state agar sinkron
     fetch('/api/products', {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(data),
-    }).catch(err => console.error('Failed to sync new product to Neon DB:', err));
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(saved => {
+        if (saved && saved.id && saved.id !== tempId) {
+          // Replace temp product dengan produk yang sudah punya ID dari DB
+          setProducts(prev => prev.map(p => p.id === tempId ? { ...p, ...saved } : p));
+        }
+      })
+      .catch(err => console.error('Failed to sync new product to Neon DB:', err));
 
     return newProduct;
   };
@@ -990,7 +1001,22 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const findProductByBarcode = (barcode: string) => {
     const cleanCode = barcode.trim().toLowerCase();
-    return products.find(p => p.barcode.toLowerCase() === cleanCode);
+    // First: exact match
+    let found = products.find(p => p.barcode.toLowerCase() === cleanCode);
+    if (found) return found;
+    // Second: normalize both sides to numeric-only and compare
+    // (handles cases where stiker mencetak EAN-13 padded dengan leading zeros tapi DB punya barcode pendek)
+    const numericScanned = cleanCode.replace(/\D/g, '');
+    found = products.find(p => {
+      const numericStored = p.barcode.replace(/\D/g, '');
+      if (!numericStored || !numericScanned) return false;
+      // Both stripped of leading zeros
+      if (numericStored.replace(/^0+/, '') === numericScanned.replace(/^0+/, '')) return true;
+      // Scanned padded to 13 vs stored
+      if (numericScanned.padStart(13, '0') === numericStored.padStart(13, '0')) return true;
+      return false;
+    });
+    return found;
   };
 
   // Payment Method operations

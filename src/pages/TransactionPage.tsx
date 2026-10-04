@@ -26,9 +26,9 @@ import {
 } from 'lucide-react';
 
 // ─── HID Scanner Config ────────────────────────────────────────────────────────
-// Scanner USB/BT HID mengetik karakter dalam burst sangat cepat (<50ms antar
-// karakter). Ketikan manusia normal membutuhkan >100ms per karakter.
-const SCANNER_MAX_INTERVAL_MS = 50;
+// Scanner USB/BT HID mengetik karakter dalam burst cepat (<100ms antar karakter).
+// Ketikan manusia normal membutuhkan >150-250ms per karakter.
+const SCANNER_MAX_INTERVAL_MS = 100;
 const SCANNER_MIN_LENGTH = 3; // Abaikan buffer terlalu pendek (noise)
 
 // ─── Color name → HEX map (untuk dot preview) ─────────────────────────────────
@@ -104,11 +104,34 @@ export const TransactionPage: React.FC = () => {
   // ─── Core Barcode Lookup (digunakan oleh semua jalur scan) ─────────────────
   const processBarcodeLookup = useCallback(
     (rawCode: string): { success: boolean; productName?: string; price?: number } => {
-      // CLEANING: Bersihkan spasi & karakter aneh sebelum diproses
-      const cleanCode = rawCode.trim();
+      // CLEANING: Hapus spasi, tab, CR/LF, dan karakter non-printable sebelum lookup
+      const cleanCode = rawCode.trim().replace(/[\r\n\t]/g, '');
       if (!cleanCode) return { success: false };
 
-      const found = findProductByBarcode(cleanCode);
+      // DEBUG: Tampilkan barcode yang discan di konsol agar bisa dibandingkan
+      console.debug(`[Scanner] Scanned barcode: "${cleanCode}" (length: ${cleanCode.length})`);
+
+      // Cari produk: exact match (case-insensitive)
+      let found = findProductByBarcode(cleanCode);
+
+      // Fallback: jika tidak ketemu, coba tanpa leading zeros atau trailing checksum digit berbeda
+      // Beberapa scanner GS1-128 menambah digit checksum extra atau memotong 1 digit awal
+      if (!found) {
+        found = products.find(p => {
+          const stored = p.barcode.trim();
+          // Scanned punya extra digit di akhir (scanner tambah checksum)
+          if (stored.length === cleanCode.length - 1 && cleanCode.startsWith(stored.slice(0, -1))) return true;
+          // Stored punya extra digit di akhir (produk di DB punya checksum berbeda)
+          if (cleanCode.length === stored.length - 1 && stored.startsWith(cleanCode.slice(0, -1))) return true;
+          // Coba strip leading 0 (beberapa EAN-8 jadi EAN-13 dengan leading zeros)
+          if (stored === cleanCode.replace(/^0+/, '') || cleanCode === stored.replace(/^0+/, '')) return true;
+          return false;
+        });
+        if (found) {
+          console.debug(`[Scanner] Fuzzy match found for "${cleanCode}" → product barcode "${found.barcode}"`);
+        }
+      }
+
       if (found) {
         if (found.stock <= 0) {
           setScanMessage({ text: `⚠️ Stok ${found.name} habis!`, type: 'error' });
@@ -122,12 +145,14 @@ export const TransactionPage: React.FC = () => {
           return { success: true, productName: found.name, price: found.price };
         }
       } else {
-        setScanMessage({ text: `❌ Barcode "${cleanCode}" tidak ditemukan dalam katalog!`, type: 'error' });
-        setTimeout(() => setScanMessage(null), 2500);
+        // Tampilkan barcode yang discan di pesan error agar kasir bisa konfirmasi
+        console.warn(`[Scanner] Barcode not found: "${cleanCode}". Stored barcodes:`, products.map(p => p.barcode));
+        setScanMessage({ text: `❌ Barcode "${cleanCode}" tidak ditemukan! (${cleanCode.length} digit)`, type: 'error' });
+        setTimeout(() => setScanMessage(null), 3000);
         return { success: false };
       }
     },
-    [findProductByBarcode, addToCart]
+    [findProductByBarcode, addToCart, products]
   );
 
   // ─── GLOBAL HID BARCODE SCANNER LISTENER ──────────────────────────────────
@@ -176,13 +201,14 @@ export const TransactionPage: React.FC = () => {
         const barcode = scanBufferRef.current.trim();
         scanBufferRef.current = '';
 
-        // Jika Enter berasal dari input manual (kasir mengetik lalu Enter)
+        // Jika Enter berasal dari input manual (kasir mengetik lalu Enter atau scanner menembak ke input field)
         if (target === barcodeInputRef.current) {
           e.preventDefault();
-          const manualCode = barcodeInput.trim();
+          const manualCode = ((target as HTMLInputElement).value || barcodeInput).trim();
           if (manualCode) {
             processBarcodeLookup(manualCode);
             setBarcodeInput('');
+            if (barcodeInputRef.current) barcodeInputRef.current.value = '';
           }
           return;
         }
@@ -289,10 +315,11 @@ export const TransactionPage: React.FC = () => {
   // ─── Manual Barcode Form Submit ────────────────────────────────────────────
   const handleBarcodeSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const code = barcodeInput.trim();
+    const code = (barcodeInputRef.current?.value || barcodeInput).trim();
     if (code) {
       processBarcodeLookup(code);
       setBarcodeInput('');
+      if (barcodeInputRef.current) barcodeInputRef.current.value = '';
     }
   };
 

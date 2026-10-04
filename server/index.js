@@ -1461,7 +1461,7 @@ app.get('/api/scan/pending', async (req, res) => {
 });
 
 // Laptop tandai barcode sudah selesai diproses (disertai info produk jika ketemu)
-app.patch('/api/scan/:id/processed', async (req, res) => {
+const handleMarkScanProcessed = async (req, res) => {
   try {
     const { id } = req.params;
     const { success, productName, productPrice } = req.body;
@@ -1479,7 +1479,9 @@ app.patch('/api/scan/:id/processed', async (req, res) => {
     console.error('Error marking scan processed:', error);
     res.status(500).json({ error: error.message });
   }
-});
+};
+app.post('/api/scan/:id/processed', handleMarkScanProcessed);
+app.patch('/api/scan/:id/processed', handleMarkScanProcessed);
 
 // HP polling acknowledgement (apakah laptop kasir sudah menemukan & menambah produk)
 app.get('/api/scan/:id/ack', async (req, res) => {
