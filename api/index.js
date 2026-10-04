@@ -3,6 +3,8 @@ import cors from 'cors';
 import pg from 'pg';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import bcrypt from 'bcrypt';
+import { rateLimit } from 'express-rate-limit';
 
 dotenv.config();
 
@@ -27,7 +29,11 @@ pool.on('error', (err) => {
   console.error('Neon pool error:', err);
 });
 
-const AUTH_SECRET = process.env.AUTH_SECRET || 'arfa-fashion-pos-secret-key-2026';
+const AUTH_SECRET = process.env.AUTH_SECRET;
+if (!AUTH_SECRET) {
+  console.error('FATAL: AUTH_SECRET environment variable is not set. Server cannot start securely.');
+  process.exit(1);
+}
 
 const createToken = (user) => {
   const payload = JSON.stringify({
@@ -49,7 +55,9 @@ const verifyToken = (token) => {
   if (parts.length !== 2) return null;
   const [b64Payload, signature] = parts;
   const expectedSig = crypto.createHmac('sha256', AUTH_SECRET).update(b64Payload).digest('base64url');
-  if (signature !== expectedSig) return null;
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
   try {
     const payload = JSON.parse(Buffer.from(b64Payload, 'base64url').toString('utf8'));
     if (payload.exp && Date.now() > payload.exp) return null;
@@ -82,6 +90,28 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+const requireAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization || req.headers['x-auth-token'];
+  const user = verifyToken(authHeader);
+  if (!user) {
+    return res.status(401).json({
+      error: 'Sesi tidak valid atau telah berakhir. Silakan login kembali.',
+      code: 'UNAUTHORIZED'
+    });
+  }
+  req.user = user;
+  next();
+};
+
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Terlalu banyak percobaan login. Coba lagi dalam 15 menit.' },
+  skipSuccessfulRequests: true,
+});
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -110,11 +140,14 @@ router.get('/network-ip', (req, res) => {
 
 // ── Auth Endpoints ─────────────────────────────────────────────────────────
 
-router.post('/auth/login', async (req, res) => {
+router.post('/auth/login', loginRateLimiter, async (req, res) => {
   try {
     const { username, password, portal } = req.body;
-    if (!username || !password) {
+    if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
       return res.status(400).json({ error: 'Username dan kata sandi wajib diisi.' });
+    }
+    if (username.length > 100 || password.length > 200) {
+      return res.status(400).json({ error: 'Input tidak valid.' });
     }
 
     const result = await pool.query(
@@ -122,14 +155,16 @@ router.post('/auth/login', async (req, res) => {
       [username.trim()]
     );
 
-    if (result.rows.length === 0) {
+    // Always run bcrypt.compare to prevent timing attacks (even when user not found)
+    const dummyHash = '$2b$10$invalidhashfortimingprotection00000000000000000000';
+    const storedHash = result.rows.length > 0 ? result.rows[0].password : dummyHash;
+    const isPasswordValid = await bcrypt.compare(password, storedHash);
+
+    if (result.rows.length === 0 || !isPasswordValid) {
       return res.status(401).json({ error: 'Username atau kata sandi tidak cocok.' });
     }
 
     const user = result.rows[0];
-    if (user.password !== password) {
-      return res.status(401).json({ error: 'Username atau kata sandi tidak cocok.' });
-    }
 
     if (!user.is_active) {
       return res.status(403).json({ error: 'Akun Anda dinonaktifkan oleh Administrator.' });
@@ -153,7 +188,8 @@ router.post('/auth/login', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Terjadi kesalahan pada server.' });
   }
 });
 
@@ -602,6 +638,9 @@ router.post('/users', requireAdmin, async (req, res) => {
     if (!username || !password || !name) {
       return res.status(400).json({ error: 'Username, kata sandi, dan nama wajib diisi.' });
     }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Kata sandi minimal 8 karakter.' });
+    }
     const cleanUser = username.trim().toLowerCase();
     const existing = await pool.query('SELECT id FROM users WHERE LOWER(username) = $1', [cleanUser]);
     if (existing.rows.length > 0) {
@@ -610,11 +649,12 @@ router.post('/users', requireAdmin, async (req, res) => {
 
     const id = `USR-${Date.now().toString().slice(-4)}`;
     const roleVal = role === 'super_admin' ? 'super_admin' : 'kasir';
+    const hashedPassword = await bcrypt.hash(password, 12);
     const result = await pool.query(
       `INSERT INTO users (id, username, password, name, role, is_active)
        VALUES ($1, $2, $3, $4, $5, TRUE)
        RETURNING id, username, name, role, is_active, created_at`,
-      [id, cleanUser, password, name.trim(), roleVal]
+      [id, cleanUser, hashedPassword, name.trim(), roleVal]
     );
 
     const r = result.rows[0];
@@ -636,6 +676,15 @@ router.put('/users/:id', requireAdmin, async (req, res) => {
     const { id } = req.params;
     const { username, password, name, role, isActive } = req.body;
 
+    if (password && password.length < 8) {
+      return res.status(400).json({ error: 'Kata sandi baru minimal 8 karakter.' });
+    }
+
+    let hashedPassword = null;
+    if (password) {
+      hashedPassword = await bcrypt.hash(password, 12);
+    }
+
     const result = await pool.query(
       `UPDATE users
        SET username = COALESCE($1, username),
@@ -646,7 +695,7 @@ router.put('/users/:id', requireAdmin, async (req, res) => {
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $6
        RETURNING id, username, name, role, is_active, created_at`,
-      [username ? username.trim().toLowerCase() : null, password ? password : null, name ? name.trim() : null, role || null, typeof isActive === 'boolean' ? isActive : null, id]
+      [username ? username.trim().toLowerCase() : null, hashedPassword, name ? name.trim() : null, role || null, typeof isActive === 'boolean' ? isActive : null, id]
     );
 
     if (result.rows.length === 0) {
@@ -758,13 +807,15 @@ router.put('/settings', requireAdmin, async (req, res) => {
 router.get('/products', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
+    const isAdmin = req.user && req.user.role === 'super_admin';
     const products = result.rows.map(r => ({
       id: r.id,
       name: r.name,
       brand: r.brand,
       category: r.category,
       price: parseFloat(r.price),
-      costPrice: r.cost_price ? parseFloat(r.cost_price) : 0,
+      // Only expose costPrice to authenticated admins
+      ...(isAdmin ? { costPrice: r.cost_price ? parseFloat(r.cost_price) : 0 } : {}),
       stock: parseInt(r.stock, 10),
       barcode: r.barcode,
       unit: r.unit || 'Pcs',
@@ -917,7 +968,7 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
 
 // ── Transactions ───────────────────────────────────────────────────────────
 
-router.get('/transactions', async (req, res) => {
+router.get('/transactions', requireAuth, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM transactions ORDER BY date DESC');
     const transactions = result.rows.map(r => ({
@@ -954,7 +1005,7 @@ const getJakartaDate = () => {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
 };
 
-router.post('/transactions', async (req, res) => {
+router.post('/transactions', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -984,7 +1035,7 @@ router.post('/transactions', async (req, res) => {
 
     // ── Attendance Validation (Prompt Rules 9, 21, 30, 31) ──
     const todayJakarta = getJakartaDate();
-    const cashierUserId = (req.user && req.user.role === 'kasir') ? req.user.id : 'USR-KAS-01';
+    const cashierUserId = req.user.id;
 
     const attRes = await client.query(
       `SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2 LIMIT 1`,
@@ -1094,7 +1145,7 @@ router.post('/transactions', async (req, res) => {
   }
 });
 
-router.patch('/transactions/:id/confirm', async (req, res) => {
+router.patch('/transactions/:id/confirm', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { confirmedBy } = req.body;
@@ -1117,19 +1168,23 @@ router.patch('/transactions/:id/confirm', async (req, res) => {
   }
 });
 
-router.patch('/transactions/:id/cancel', async (req, res) => {
+router.patch('/transactions/:id/cancel', requireAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { id } = req.params;
 
-    const txRes = await client.query(`SELECT * FROM transactions WHERE id = $1`, [id]);
+    const txRes = await client.query(`SELECT * FROM transactions WHERE id = $1 FOR UPDATE`, [id]);
     if (txRes.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Transaction not found' });
     }
 
     const tx = txRes.rows[0];
+    if (tx.status === 'BATAL') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Transaksi ini sudah dibatalkan sebelumnya.' });
+    }
     const items = typeof tx.items === 'string' ? JSON.parse(tx.items) : tx.items;
 
     for (const item of items) {

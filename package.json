@@ -12,10 +12,13 @@
   },
   "dependencies": {
     "@types/jsbarcode": "^3.11.4",
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
     "canvas-confetti": "^1.9.4",
     "cors": "^2.8.6",
     "dotenv": "^18.0.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
     "html5-qrcode": "^2.3.8",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^1.16.0",

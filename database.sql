@@ -146,11 +146,11 @@ CREATE INDEX IF NOT EXISTS idx_pending_scans_session ON pending_scans (session_c
 -- INITIAL SEED DATA (DATA AWAL SISTEM)
 -- ====================================================================
 
--- Data Awal Pengguna (Login: admin / admin123, gusti / 123456)
+-- Data Awal Pengguna (Kata sandi di-hash menggunakan bcrypt)
 INSERT INTO users (id, username, password, name, role, is_active)
 VALUES 
-  ('USR-ADM-01', 'admin', 'admin123', 'Super Admin', 'super_admin', TRUE),
-  ('USR-KAS-01', 'gusti', '123456', 'Gusti', 'kasir', TRUE)
+  ('USR-ADM-01', 'admin', '$2b$10$QbBFjqhitnZuPT5L7I60cuvhDMLd6/lBf/ZsbXvOLglpw5EoPQARK', 'Super Admin', 'super_admin', TRUE),
+  ('USR-KAS-01', 'gusti', '$2b$10$gmteABlXoj7T0Yirh.1xmOj0MRpeofZz2j1HPbgVn5H/HfOixIcq6', 'Gusti', 'kasir', TRUE)
 ON CONFLICT (id) DO NOTHING;
 
 -- Data Awal Pengaturan Toko

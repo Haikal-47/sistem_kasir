@@ -1,4 +1,5 @@
 import { pool } from './db.js';
+import bcrypt from 'bcryptjs';
 
 export const initDatabase = async () => {
   const client = await pool.connect();
@@ -214,17 +215,28 @@ export const initDatabase = async () => {
       `);
     }
 
-    // Seed users table if empty
+    // Seed users table if empty with bcrypt hashes
     const userCheck = await client.query(`SELECT COUNT(*) FROM users`);
     if (parseInt(userCheck.rows[0].count, 10) === 0) {
+      const adminHash = await bcrypt.hash('admin123', 10);
+      const kasirHash = await bcrypt.hash('123456', 10);
       await client.query(`
         INSERT INTO users (id, username, password, name, role, is_active)
         VALUES 
-          ('USR-ADM-01', 'admin', 'admin123', 'Super Admin', 'super_admin', TRUE),
-          ('USR-KAS-01', 'gusti', '123456', 'Gusti', 'kasir', TRUE)
+          ('USR-ADM-01', 'admin', $1, 'Super Admin', 'super_admin', TRUE),
+          ('USR-KAS-01', 'gusti', $2, 'Gusti', 'kasir', TRUE)
         ON CONFLICT (id) DO NOTHING;
-      `);
-      console.log('✅ Akun pengguna Admin & Kasir berhasil di-seed');
+      `, [adminHash, kasirHash]);
+      console.log('✅ Akun pengguna Admin & Kasir berhasil di-seed (password hashed)');
+    } else {
+      // Auto-migrate any unhashed passwords
+      const existingUsers = await client.query(`SELECT id, password FROM users`);
+      for (const u of existingUsers.rows) {
+        if (u.password && !u.password.startsWith('$2a$') && !u.password.startsWith('$2b$')) {
+          const hashed = await bcrypt.hash(u.password, 10);
+          await client.query(`UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [hashed, u.id]);
+        }
+      }
     }
 
     // Seed store_settings if empty
