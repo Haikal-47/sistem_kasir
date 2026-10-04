@@ -133,9 +133,9 @@
   .barcode-label-card {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-    width: 48mm !important;
-    min-height: 36mm !important;
-    max-height: 42mm !important;
+    width: 47mm !important;
+    min-height: 32mm !important;
+    max-height: 36mm !important;
     margin: 1mm !important;
     padding: 1.5mm !important;
     border: 0.3mm dashed #999 !important;

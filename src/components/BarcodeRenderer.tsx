@@ -13,8 +13,8 @@ interface BarcodeRendererProps {
 
 export const BarcodeRenderer: React.FC<BarcodeRendererProps> = ({
   value,
-  width = 1.65,
-  height = 52,
+  width = 1.45,
+  height = 44,
   displayValue = false,
   fontSize = 10,
   className = '',
@@ -40,7 +40,7 @@ export const BarcodeRenderer: React.FC<BarcodeRendererProps> = ({
         fontSize,
         font: 'monospace',
         textMargin: 2,
-        margin: 8, // Quiet Zone
+        margin: 6, // Quiet Zone
         lineColor: '#000000',
       });
     } catch (err) {
@@ -53,7 +53,7 @@ export const BarcodeRenderer: React.FC<BarcodeRendererProps> = ({
             height,
             displayValue,
             fontSize,
-            margin: 8,
+            margin: 6,
             lineColor: '#000000',
           });
         }

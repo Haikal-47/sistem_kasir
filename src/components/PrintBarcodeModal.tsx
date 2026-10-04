@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Product } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { BarcodeRenderer } from './BarcodeRenderer';
-import { Printer, X, Tag, Sliders, CheckSquare, Square, Sparkles } from 'lucide-react';
+import { Printer, X, Tag, Sliders, CheckSquare, Square } from 'lucide-react';
 
 interface PrintBarcodeModalProps {
   isOpen: boolean;
@@ -48,58 +48,51 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
     window.print();
   };
 
-  // Render individual retail barcode label (Modern Hangtag Design)
+  // Render individual retail barcode label (matching the exact 7:19 PM print layout)
   const renderBarcodeLabel = (product: Product, index: number) => {
-    const isSheet = labelFormat === 'SHEET';
     return (
       <div
         key={`${product.id}-${index}`}
-        className="barcode-label-card group relative bg-white border border-slate-200/90 rounded-2xl p-2.5 flex flex-col justify-between items-center text-center shadow-xs hover:shadow-md transition-all duration-200 select-none box-border print:border-slate-400 print:rounded-none print:shadow-none"
-        style={isSheet
-          ? { width: '194px', minHeight: '154px' }
-          : { width: '186px', minHeight: '130px' }
+        className="barcode-label-card bg-white border border-slate-200 rounded-lg p-2 flex flex-col justify-between items-center text-center shadow-sm select-none box-border print:border-slate-400 print:rounded-none print:shadow-none"
+        style={labelFormat === 'SHEET'
+          ? { width: '178px', minHeight: '130px' }
+          : { width: '180px', minHeight: '112px' }
         }
       >
-        {/* Subtle Hangtag Punch Hole for Modern Fashion Retail Aesthetic */}
-        <div className="w-2.5 h-2.5 rounded-full bg-slate-100 border border-slate-300 mx-auto -mt-0.5 mb-1 print:border-slate-400 shadow-inner" />
-
-        {/* Store & Category Pill */}
-        <div className="w-full flex items-center justify-between gap-1 pb-1 border-b border-dashed border-slate-200 text-[8px]">
-          <span className="font-extrabold tracking-wider text-slate-800 uppercase truncate max-w-[95px]">
-            {product.brand || 'ARFA FASHION'}
-          </span>
-          <span className="font-bold text-[7px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/60 uppercase shrink-0 truncate max-w-[70px]">
-            {product.category}
-          </span>
+        {/* Store & Category */}
+        <div className="w-full flex items-center justify-between border-b border-dashed border-slate-300 pb-1 text-[8px] font-bold text-slate-500 uppercase">
+          <span>ARFA FASHION</span>
+          <span className="truncate max-w-[90px] text-right">{product.category}</span>
         </div>
 
-        {/* Product Name & Variant */}
+        {/* Product Name */}
         <div className="my-1 w-full px-0.5">
           <h4 className="font-bold text-[10px] text-slate-900 leading-snug line-clamp-2 text-center">
             {product.name}
           </h4>
-          <span className="text-[7.5px] text-slate-400 font-medium uppercase tracking-wide">
-            {product.sizes && product.sizes.length > 0 ? `SIZE ${product.sizes.join('/')}` : (product.unit || 'PCS')}
+          <span className="text-[8px] text-slate-500 font-medium">
+            {product.brand}
           </span>
         </div>
 
-        {/* Scannable Barcode with enlarged bars and proper Quiet Zone */}
-        <div className="w-full flex flex-col items-center justify-center py-1 bg-white overflow-hidden">
+        {/* Scannable Barcode with proper Quiet Zone */}
+        <div className="w-full flex justify-center py-0.5 bg-white overflow-hidden">
           <BarcodeRenderer
             value={product.barcode}
-            width={isSheet ? 1.75 : 1.6}
-            height={isSheet ? 52 : 46}
+            width={labelFormat === 'SHEET' ? 1.45 : 1.3}
+            height={labelFormat === 'SHEET' ? 44 : 38}
           />
-          {/* Monospace Digits with wide tracking for scannability and human readability */}
-          <span className="text-[9px] font-mono font-bold tracking-[0.24em] text-slate-800 mt-0.5">
-            {product.barcode}
-          </span>
         </div>
 
-        {/* Price Section */}
-        <div className="w-full pt-1 mt-0.5 border-t border-dashed border-slate-200 flex items-baseline justify-between text-slate-900">
-          <span className="text-[7.5px] uppercase font-bold text-slate-400 tracking-wider">HARGA PAS</span>
-          <span className="font-black text-[13px] font-mono tracking-tight text-slate-950">
+        {/* Barcode digits */}
+        <span className="text-[8px] font-mono font-bold tracking-widest text-slate-900 -mt-0.5">
+          {product.barcode}
+        </span>
+
+        {/* Price Tag */}
+        <div className="w-full pt-1 mt-0.5 border-t border-dashed border-slate-300 flex items-baseline justify-between text-slate-900">
+          <span className="text-[7px] uppercase font-bold text-slate-500">Harga:</span>
+          <span className="font-extrabold text-[12px] font-mono tracking-tight text-slate-950">
             {formatRupiah(product.price)}
           </span>
         </div>
@@ -118,12 +111,7 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
               <Tag className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-base">Cetak Label Barcode Produk</h3>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center gap-1">
-                  <Sparkles className="w-2.5 h-2.5" /> Modern Hangtag
-                </span>
-              </div>
+              <h3 className="font-bold text-base">Cetak Label Barcode Produk</h3>
               <p className="text-xs text-slate-400">
                 {selectedProduct ? `Mencetak stiker barcode: ${selectedProduct.name}` : 'Pilih produk untuk mencetak stiker harga & barcode'}
               </p>
@@ -150,7 +138,7 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
                   onClick={() => setCopies(num)}
                   className={`py-1 px-2.5 rounded-lg font-bold border transition-colors ${
                     copies === num
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                      ? 'bg-slate-900 text-white border-slate-900'
                       : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                   }`}
                 >
@@ -167,7 +155,7 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
             <select
               value={labelFormat}
               onChange={(e) => setLabelFormat(e.target.value as any)}
-              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-800 outline-hidden focus:border-brand-500 shadow-2xs"
+              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-800 outline-hidden"
             >
               <option value="SHEET">Kertas A4 Biasa (4 kolom/baris)</option>
               <option value="THERMAL">Printer Label Thermal (50x30mm)</option>
@@ -229,45 +217,44 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
             )}
 
             {targetProducts.length === 0 && (
-              <div className="py-12 text-center text-slate-400 w-full font-medium text-xs">
-                Tidak ada produk yang dipilih untuk dicetak.
+              <div className="p-12 text-center text-slate-400 text-xs">
+                Pilih minimal 1 produk untuk mencetak stiker barcode.
               </div>
             )}
           </div>
         </div>
 
-        {/* Footer / Print Actions (Hidden in Print) */}
-        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <div className="text-xs text-slate-500">
-            Total dicetak: <strong className="text-slate-800">{targetProducts.length * copies}</strong> label
-            {labelFormat === 'SHEET' && (
-              <span className="ml-1 text-[11px] text-slate-400">
-                (~{Math.ceil((targetProducts.length * copies) / 16)} lembar A4)
-              </span>
-            )}
-            <span className="block text-[10px] text-amber-700 mt-0.5">
-              💡 Tips cetak A4: Margin: <strong>None / Tidak Ada</strong>, Skala: <strong>100%</strong>, Aktifkan <strong>Cetak latar belakang</strong>
+        {/* Footer Actions (Hidden in Print) */}
+        <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between print:hidden">
+          <div className="space-y-0.5">
+            <span className="text-xs text-slate-500">
+              Total stiker: <strong className="text-slate-900">{targetProducts.length * copies} label</strong>
+              {labelFormat === 'SHEET' && (
+                <span className="text-slate-400"> · sekitar {Math.ceil(targetProducts.length * copies / 16)} halaman A4</span>
+              )}
             </span>
+            <p className="text-[10px] text-amber-600 font-medium">
+              💡 Tips: Pilih <strong>A4 / Letter</strong> di dialog print, margin <strong>Tidak Ada / None</strong>, skala <strong>100%</strong>
+            </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              className="py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-100 transition-colors"
             >
               Batal
             </button>
             <button
               onClick={handlePrint}
               disabled={targetProducts.length === 0}
-              className="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="py-2.5 px-5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Printer className="w-4 h-4" />
-              <span>Cetak Sekarang</span>
+              <span>Cetak Sekarang (Print)</span>
             </button>
           </div>
         </div>
-
       </div>
     </div>
   );
