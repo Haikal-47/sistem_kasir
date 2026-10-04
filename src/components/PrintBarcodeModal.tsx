@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Product } from '../types';
 import { formatRupiah } from '../utils/formatters';
-import { generateEAN13SVG } from '../utils/barcodeGenerator';
+import { BarcodeRenderer } from './BarcodeRenderer';
 import { Printer, X, Tag, Sliders, CheckSquare, Square } from 'lucide-react';
 
 interface PrintBarcodeModalProps {
@@ -50,12 +50,6 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
 
   // Render individual retail barcode label
   const renderBarcodeLabel = (product: Product, index: number) => {
-    // Untuk A4: barcode lebih lebar agar scannable (170px wide, 52px tall)
-    // Untuk Thermal: sedikit lebih kecil
-    const svgW = labelFormat === 'SHEET' ? 168 : 150;
-    const svgH = labelFormat === 'SHEET' ? 50 : 46;
-    const barcodeSvg = generateEAN13SVG(product.barcode, svgW, svgH, false);
-
     return (
       <div
         key={`${product.id}-${index}`}
@@ -81,11 +75,14 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
           </span>
         </div>
 
-        {/* EAN-13 SVG Barcode */}
-        <div
-          className="w-full flex justify-center"
-          dangerouslySetInnerHTML={{ __html: barcodeSvg }}
-        />
+        {/* Scannable Barcode with proper Quiet Zone */}
+        <div className="w-full flex justify-center py-0.5 bg-white overflow-hidden">
+          <BarcodeRenderer
+            value={product.barcode}
+            width={labelFormat === 'SHEET' ? 1.45 : 1.3}
+            height={labelFormat === 'SHEET' ? 44 : 38}
+          />
+        </div>
 
         {/* Barcode digits */}
         <span className="text-[8px] font-mono font-bold tracking-widest text-slate-900 -mt-0.5">

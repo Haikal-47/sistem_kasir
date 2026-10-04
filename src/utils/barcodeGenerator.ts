@@ -1,94 +1,131 @@
+import JsBarcode from 'jsbarcode';
+
 /**
- * EAN-13 Barcode SVG Generator
- * Implements the official EAN-13 encoding standard:
- * - 3-bar start/end guard
- * - 5-bar center guard  
- * - L-code (left odd), G-code (left even), R-code (right) encoding per digit
- * - First digit encoded via L/G parity pattern
- * Returns an SVG string that renders a scannable, print-safe EAN-13 barcode.
+ * Validates if a 13-digit code has a valid EAN-13 checksum.
  */
-
-// EAN-13 encoding tables (7 modules each)
-const L_CODE = ['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'];
-const G_CODE = ['0100111','0110011','0011011','0100001','0011101','0111001','0000101','0010001','0001001','0010111'];
-const R_CODE = ['1110010','1100110','1101100','1000010','1011100','1001110','1010000','1000100','1001000','1110100'];
-
-// First digit selects L/G parity pattern for left 6 digits
-const PARITY = [
-  'LLLLLL','LLGLGG','LLGGLG','LLGGGL','LGLLGG',
-  'LGGLLG','LGGGLL','LGLGLG','LGLGGL','LGGLGL',
-];
+export const isValidEAN13 = (code: string): boolean => {
+  if (!/^\d{13}$/.test(code)) return false;
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    const digit = parseInt(code[i], 10);
+    sum += i % 2 === 0 ? digit * 1 : digit * 3;
+  }
+  const checksum = (10 - (sum % 10)) % 10;
+  return checksum === parseInt(code[12], 10);
+};
 
 /**
- * Generate a proper EAN-13 SVG barcode string.
- * Falls back to a readable Code-39 style visual for non-13-digit codes.
+ * Calculates the 13th checksum digit for a 12-digit string and returns full 13-digit EAN-13.
+ */
+export const calculateEAN13Checksum = (first12: string): string => {
+  const clean = first12.replace(/\D/g, '').slice(0, 12).padStart(12, '0');
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    const digit = parseInt(clean[i], 10);
+    sum += i % 2 === 0 ? digit * 1 : digit * 3;
+  }
+  const checksum = (10 - (sum % 10)) % 10;
+  return `${clean}${checksum}`;
+};
+
+/**
+ * Generates a valid 13-digit EAN-13 barcode with mathematically valid checksum (prefix default 899 for Indonesia).
+ */
+export const generateRandomEAN13 = (prefix = '899'): string => {
+  let random9 = '';
+  for (let i = 0; i < 9; i++) {
+    random9 += Math.floor(Math.random() * 10).toString();
+  }
+  return calculateEAN13Checksum(`${prefix}${random9}`);
+};
+
+export interface BarcodeSVGOptions {
+  width?: number; // bar module width (e.g. 1.3 - 2.0)
+  height?: number; // bar height in px
+  displayValue?: boolean;
+  fontSize?: number;
+  margin?: number;
+}
+
+/**
+ * Generates an SVG string representation of a scannable barcode.
+ * Uses EAN-13 if exactly 13 digits with valid checksum.
+ * Uses CODE-128 for anything else (e.g. 12 digits like 202606161725, dates, alphanumeric),
+ * which is 100% scannable by all standard 1D/2D optical and camera barcode scanners.
+ */
+export const generateBarcodeSVG = (
+  code: string,
+  options?: BarcodeSVGOptions
+): string => {
+  if (typeof document === 'undefined') return '';
+  const clean = (code || '').trim();
+  if (!clean) return '';
+
+  const isEan = /^\d{13}$/.test(clean) && isValidEAN13(clean);
+  const format = isEan ? 'EAN13' : 'CODE128';
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+
+  const width = options?.width || 1.45;
+  const height = options?.height || 48;
+  const displayValue = options?.displayValue ?? false;
+  const margin = options?.margin ?? 8; // Mandatory Quiet Zone margin!
+
+  try {
+    JsBarcode(svg, clean, {
+      format,
+      width,
+      height,
+      displayValue,
+      fontSize: options?.fontSize || 10,
+      font: 'monospace',
+      textMargin: 2,
+      margin,
+      background: '#ffffff',
+      lineColor: '#000000',
+    });
+    return new XMLSerializer().serializeToString(svg);
+  } catch (err) {
+    console.warn(`JsBarcode (${format}) generation failed, falling back to CODE128:`, err);
+    try {
+      JsBarcode(svg, clean, {
+        format: 'CODE128',
+        width,
+        height,
+        displayValue,
+        fontSize: options?.fontSize || 10,
+        margin,
+        background: '#ffffff',
+        lineColor: '#000000',
+      });
+      return new XMLSerializer().serializeToString(svg);
+    } catch (err2) {
+      console.error('Failed to generate barcode SVG:', err2);
+      return '';
+    }
+  }
+};
+
+/**
+ * Backward-compatible wrapper for existing calls.
  */
 export const generateEAN13SVG = (
   code: string,
-  width = 200,
-  height = 60,
-  showText = true
+  width = 168,
+  height = 50,
+  showText = false
 ): string => {
-  // Pad or trim to 13 digits
-  const digits = code.replace(/\D/g, '').padStart(13, '0').slice(0, 13);
-
-  const firstDigit = parseInt(digits[0]);
-  const parity = PARITY[firstDigit] || 'LLLLLL';
-
-  // Build the full bit string
-  let bits = '';
-  bits += '101';                          // Start guard
-  for (let i = 1; i <= 6; i++) {          // Left group (digits 1-6)
-    const d = parseInt(digits[i]);
-    bits += parity[i - 1] === 'L' ? L_CODE[d] : G_CODE[d];
-  }
-  bits += '01010';                        // Center guard
-  for (let i = 7; i <= 12; i++) {         // Right group (digits 7-12)
-    bits += R_CODE[parseInt(digits[i])];
-  }
-  bits += '101';                          // End guard
-
-  // Total modules = 95, render into SVG
-  const moduleWidth = width / 95;
-  const barHeight = showText ? height - 14 : height;
-  const guardHeight = showText ? height - 8 : height; // guards taller
-
-  // Guards are at specific positions
-  const guardPositions = new Set<number>();
-  // Start guard: modules 0,1,2
-  [0, 2].forEach(i => guardPositions.add(i));
-  // Center guard: modules 45,46,47,48,49
-  [45, 47, 49].forEach(i => guardPositions.add(i));
-  // End guard: modules 92,93,94
-  [92, 94].forEach(i => guardPositions.add(i));
-
-  let rects = '';
-  let x = 0;
-  for (let i = 0; i < bits.length; i++) {
-    const isBar = bits[i] === '1';
-    const isGuard = guardPositions.has(i);
-    const h = isGuard ? guardHeight : barHeight;
-    if (isBar) {
-      rects += `<rect x="${(x * moduleWidth).toFixed(2)}" y="0" width="${moduleWidth.toFixed(2)}" height="${h}" fill="#000"/>`;
-    }
-    x++;
-  }
-
-  // Human-readable text below
-  const textY = height - 2;
-  const fontSize = 9;
-  const leftNum = digits.slice(1, 7);
-  const rightNum = digits.slice(7, 13);
-  const textPart = showText
-    ? `<text x="0" y="${textY}" font-size="${fontSize}" font-family="monospace" fill="#000">${digits[0]}</text>
-       <text x="${(3 * moduleWidth + 95 * moduleWidth * 0.1).toFixed(1)}" y="${textY}" font-size="${fontSize}" font-family="monospace" fill="#000" text-anchor="middle">${leftNum}</text>
-       <text x="${(50 * moduleWidth + 95 * moduleWidth * 0.35).toFixed(1)}" y="${textY}" font-size="${fontSize}" font-family="monospace" fill="#000" text-anchor="middle">${rightNum}</text>`
-    : '';
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${rects}${textPart}</svg>`;
+  // Convert legacy pixel width (e.g. 150-200) to module width (approx 1.3 - 1.5)
+  const modWidth = width > 20 ? Math.max(1.2, Math.min(2.0, width / 110)) : width;
+  return generateBarcodeSVG(code, {
+    width: modWidth,
+    height,
+    displayValue: showText,
+    margin: 8,
+  });
 };
 
-/** Legacy shim — kept so nothing else breaks if still imported */
+/** Legacy shim */
 export const generateBarcodeBars = (code: string): number[] => {
   const clean = code.replace(/[^0-9A-Za-z]/g, '');
   const bars: number[] = [];

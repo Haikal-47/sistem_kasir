@@ -20,6 +20,7 @@ import {
   Ruler,
 } from 'lucide-react';
 import { PrintBarcodeModal } from '../components/PrintBarcodeModal';
+import { generateRandomEAN13 } from '../utils/barcodeGenerator';
 
 // ── Color name → HEX mapping for dot previews ─────────────────────────────
 const COLOR_HEX_MAP: Record<string, string> = {
@@ -85,7 +86,7 @@ export const ProductsPage: React.FC = () => {
       price: 0,
       costPrice: 0,
       stock: 10,
-      barcode: `899${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+      barcode: generateRandomEAN13(),
       unit: 'Pcs',
       colorsInput: '',
       sizesInput: '',
@@ -148,7 +149,7 @@ export const ProductsPage: React.FC = () => {
   };
 
   const generateNewBarcode = () => {
-    const newCode = `899${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+    const newCode = generateRandomEAN13();
     setFormData(prev => ({ ...prev, barcode: newCode }));
   };
 
