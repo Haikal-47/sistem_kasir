@@ -80,7 +80,20 @@ export const initDatabase = async () => {
       ALTER TABLE transactions ADD COLUMN IF NOT EXISTS attendance_id VARCHAR(64);
       ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
       ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(50);
+      ALTER TABLE transactions ADD COLUMN IF NOT EXISTS user_id VARCHAR(64);
       CREATE INDEX IF NOT EXISTS idx_transactions_attendance ON transactions(attendance_id);
+
+      -- Idempotency Keys Table
+      CREATE TABLE IF NOT EXISTS idempotency_keys (
+        key VARCHAR(255) PRIMARY KEY,
+        transaction_id VARCHAR(64) NOT NULL,
+        response_body JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_idempotency_created_at ON idempotency_keys (created_at);
+
+      -- Invoice Sequence
+      CREATE SEQUENCE IF NOT EXISTS invoice_seq START 1;
 
       -- Cashier Attendances Table (Absensi Kasir + Modal Kas Tetap Rp500.000 + Tutup Kas)
       CREATE TABLE IF NOT EXISTS cashier_attendances (

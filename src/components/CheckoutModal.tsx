@@ -17,6 +17,8 @@ import {
   Building2,
   User,
   Phone,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -80,6 +82,8 @@ export const CheckoutModal: React.FC = () => {
   const [selectedProofUrl, setSelectedProofUrl] = useState<string>(SAMPLE_PROOFS[0].url);
   const [isVerifiedByCashier, setIsVerifiedByCashier] = useState<boolean>(false);
   const [customProofUpload, setCustomProofUpload] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isCheckoutOpen) {
@@ -89,6 +93,8 @@ export const CheckoutModal: React.FC = () => {
       setSelectedProofUrl(SAMPLE_PROOFS[0].url);
       setCustomerName('');
       setCustomerPhone('');
+      setIsSubmitting(false);
+      setSubmitError(null);
       // Reset to default method
       setSelectedMethod(defaultMethod || null);
     }
@@ -108,27 +114,38 @@ export const CheckoutModal: React.FC = () => {
   const isCashSufficient = cashGiven >= cartTotal;
 
   // Handle Cash Confirm
-  const handleCashConfirm = () => {
-    if (!isCashSufficient || !selectedMethod) return;
-    try {
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
-    } catch (e) { /* ignore */ }
-    createCashTransaction(cashGiven, selectedMethod.name, customerName, customerPhone);
-  };
-
-  // Handle Transfer Direct Confirm
-  const handleTransferConfirm = (directConfirm: boolean) => {
-    if (!selectedMethod) return;
-    if (directConfirm && !isVerifiedByCashier) return;
-    
-    if (directConfirm) {
+  const handleCashConfirm = async () => {
+    if (isSubmitting || !isCashSufficient || !selectedMethod) return;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    const result = await createCashTransaction(cashGiven, selectedMethod.name, customerName, customerPhone);
+    setIsSubmitting(false);
+    if (!result.success) {
+      setSubmitError(result.error || 'Transaksi gagal diproses.');
+    } else {
       try {
         confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
       } catch (e) { /* ignore */ }
     }
+  };
+
+  // Handle Transfer Direct Confirm
+  const handleTransferConfirm = async (directConfirm: boolean) => {
+    if (isSubmitting || !selectedMethod) return;
+    if (directConfirm && !isVerifiedByCashier) return;
     
+    setIsSubmitting(true);
+    setSubmitError(null);
     const proof = customProofUpload || selectedProofUrl;
-    createTransferTransaction(selectedMethod.name, selectedMethod.name, proof, directConfirm, customerName, customerPhone);
+    const result = await createTransferTransaction(selectedMethod.name, selectedMethod.name, proof, directConfirm, customerName, customerPhone);
+    setIsSubmitting(false);
+    if (!result.success) {
+      setSubmitError(result.error || 'Transaksi gagal diproses.');
+    } else if (directConfirm) {
+      try {
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
+      } catch (e) { /* ignore */ }
+    }
   };
 
   // Quick cash buttons
@@ -178,6 +195,14 @@ export const CheckoutModal: React.FC = () => {
             <X className="w-6 h-6" />
           </button>
         </div>
+
+        {/* Error Alert if Checkout Failed */}
+        {submitError && (
+          <div className="mx-5 mt-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold flex items-start gap-2.5 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div className="flex-1">{submitError}</div>
+          </div>
+        )}
 
         {/* ===== CUSTOMER INFO SECTION ===== */}
         <div className="px-5 pt-4 pb-3 bg-slate-50 border-b border-slate-200 shrink-0">
@@ -507,7 +532,8 @@ export const CheckoutModal: React.FC = () => {
         <div className="p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
           <button
             onClick={() => setIsCheckoutOpen(false)}
-            className="py-3 px-5 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-100 transition-colors"
+            disabled={isSubmitting}
+            className="py-3 px-5 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Batal
           </button>
@@ -516,15 +542,24 @@ export const CheckoutModal: React.FC = () => {
           {selectedMethod && isTunai && (
             <button
               onClick={handleCashConfirm}
-              disabled={!isCashSufficient}
+              disabled={!isCashSufficient || isSubmitting}
               className={`flex-1 py-3.5 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-md transition-all ${
-                isCashSufficient
+                isCashSufficient && !isSubmitting
                   ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-brand-600/30'
                   : 'bg-slate-300 text-slate-500 cursor-not-allowed'
               }`}
             >
-              <CheckCircle className="w-5 h-5" />
-              <span>Konfirmasi Lunas — {selectedMethod.name}</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Memproses Pembayaran...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-5 h-5" />
+                  <span>Konfirmasi Lunas — {selectedMethod.name}</span>
+                </>
+              )}
             </button>
           )}
 
@@ -533,7 +568,8 @@ export const CheckoutModal: React.FC = () => {
             <div className="flex-1 flex gap-2">
               <button
                 onClick={() => handleTransferConfirm(false)}
-                className="py-3.5 px-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 font-semibold text-xs hover:bg-amber-100 transition-colors flex items-center justify-center gap-1.5"
+                disabled={isSubmitting}
+                className="py-3.5 px-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 font-semibold text-xs hover:bg-amber-100 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Simpan ke antrean konfirmasi untuk dicek nanti"
               >
                 <Clock className="w-4 h-4 text-amber-700" />
@@ -542,15 +578,24 @@ export const CheckoutModal: React.FC = () => {
 
               <button
                 onClick={() => handleTransferConfirm(true)}
-                disabled={!isVerifiedByCashier}
+                disabled={!isVerifiedByCashier || isSubmitting}
                 className={`flex-1 py-3.5 px-5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-md transition-all ${
-                  isVerifiedByCashier
+                  isVerifiedByCashier && !isSubmitting
                     ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-brand-600/30'
                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 }`}
               >
-                <CheckCircle className="w-5 h-5" />
-                <span>Konfirmasi Lunas</span>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Memproses...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-5 h-5" />
+                    <span>Konfirmasi Lunas</span>
+                  </>
+                )}
               </button>
             </div>
           )}

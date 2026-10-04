@@ -88,10 +88,10 @@ interface POSContextType {
   
   // Transactions
   transactions: Transaction[];
-  createCashTransaction: (cashGiven: number, methodName: string, customerName?: string, customerPhone?: string) => Transaction;
-  createTransferTransaction: (methodName: string, transferBank: string, proofUrl: string, isConfirmedDirectly: boolean, customerName?: string, customerPhone?: string) => Transaction;
+  createCashTransaction: (cashGiven: number, methodName?: string, customerName?: string, customerPhone?: string) => Promise<{ success: boolean; transaction?: Transaction; error?: string }>;
+  createTransferTransaction: (methodName: string, transferBank: string, proofUrl: string, isConfirmedDirectly: boolean, customerName?: string, customerPhone?: string) => Promise<{ success: boolean; transaction?: Transaction; error?: string }>;
   confirmTransferPayment: (transactionId: string) => void;
-  cancelTransaction: (transactionId: string) => void;
+  cancelTransaction: (transactionId: string) => Promise<{ success: boolean; error?: string }>;
   pendingConfirmations: Transaction[];
   
   // Payment Methods
@@ -338,24 +338,10 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetchTodaySummary();
       return { success: true };
     } catch (err: unknown) {
-      // Network error — simpan lokal sebagai fallback darurat
-      console.error('Check-in network error, using local fallback:', err);
-      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
-      const fallbackAtt: CashierAttendance = {
-        id: `ATT-${Date.now()}`,
-        userId: currentUser?.id || 'USR-KAS-01',
-        cashierName: currentUser?.name || 'Gusti',
-        date: today,
-        checkIn: new Date().toISOString(),
-        openingCash: 500000,
-        expectedCash: 500000,
-        status: 'working'
-      };
-      setAttendance(fallbackAtt);
-      setAttendanceStatus('working');
-      localStorage.setItem('pos_attendance_today', JSON.stringify(fallbackAtt));
-      setIsCheckInModalOpen(false);
-      return { success: true };
+      // FIX #2: Jangan buat fake attendance saat network error.
+      // Database adalah source of truth untuk attendance.
+      console.error('Check-in network error:', err);
+      return { success: false, error: 'Gagal terhubung ke server. Silakan periksa koneksi internet dan coba lagi.' };
     }
   };
 
@@ -1102,146 +1088,151 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Cash payment creation
-  const createCashTransaction = (cashGiven: number, methodName: string = 'Tunai', customerName?: string, customerPhone?: string): Transaction => {
+  const createCashTransaction = async (
+    cashGiven: number,
+    methodName: string = 'Tunai',
+    customerName?: string,
+    customerPhone?: string
+  ): Promise<{ success: boolean; transaction?: Transaction; error?: string }> => {
     if (!isSuperAdmin) {
       if (attendanceStatus === 'not_started') {
-        alert('Transaksi Ditolak: Anda belum melakukan Absen Masuk hari ini. Silakan mulai hari kerja terlebih dahulu.');
         setIsCheckInModalOpen(true);
-        return {} as Transaction;
+        return { success: false, error: 'Transaksi Ditolak: Anda belum melakukan Absen Masuk hari ini. Silakan mulai hari kerja terlebih dahulu.' };
       }
       if (attendanceStatus === 'completed') {
-        alert('Transaksi Ditolak: Hari kerja Anda hari ini sudah selesai.');
-        return {} as Transaction;
+        return { success: false, error: 'Transaksi Ditolak: Hari kerja Anda hari ini sudah selesai.' };
       }
+    }
+
+    if (cart.length === 0) {
+      return { success: false, error: 'Keranjang belanja masih kosong.' };
     }
 
     const items = cart.map(item => ({
       productId: item.product.id,
-      name: item.product.name,
-      brand: item.product.brand,
-      price: item.product.price,
       quantity: item.quantity,
-      subtotal: item.product.price * item.quantity,
       selectedColor: item.selectedColor,
       selectedSize: item.selectedSize,
       variantId: item.variantId,
     }));
 
-    const changeAmount = Math.max(0, cashGiven - cartTotal);
-    const newTx: Transaction = {
-      id: `TRX-${Date.now()}`,
-      invoiceNumber: generateInvoiceNumber(),
-      date: new Date().toISOString(),
-      cashierName: currentUser?.name || cashier.name,
-      items,
-      subtotal: cartSubtotal,
-      tax: 0,
-      discount: cartDiscount,
-      total: cartTotal,
-      paymentMethod: methodName,
-      paymentMethodType: 'TUNAI',
-      status: 'LUNAS',
-      cashGiven,
-      changeAmount,
-      customerName: customerName?.trim() || undefined,
-      customerPhone: customerPhone?.trim() || undefined,
-      attendanceId: attendance?.id || undefined,
-    };
+    // FIX #3: Gunakan crypto.randomUUID() untuk idempotency key yang proper.
+    // Key dibuat SEKALI sebelum request dan digunakan kembali jika ada retry.
+    const idempotencyKey = `pos-cash-${crypto.randomUUID()}`;
 
-    deductStock(items);
-    setTransactions(prev => [newTx, ...prev]);
-    clearCart();
-    setIsCheckoutOpen(false);
-    setSelectedReceipt(newTx);
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: {
+          ...authHeaders(),
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+          items,
+          paymentMethod: methodName,
+          cashGiven,
+          discount: cartDiscount,
+          customerName: customerName?.trim() || undefined,
+          customerPhone: customerPhone?.trim() || undefined,
+        }),
+      });
 
-    fetch('/api/transactions', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(newTx),
-    }).then(() => {
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Gagal memproses transaksi kasir.' };
+      }
+
+      const newTx: Transaction = data;
+      deductStock(items);
+      setTransactions(prev => [newTx, ...prev]);
+      clearCart();
+      setIsCheckoutOpen(false);
+      setSelectedReceipt(newTx);
+
       refreshAttendance();
       fetchTodaySummary();
-    }).catch(err => console.error('Failed to save transaction to Neon DB:', err));
-
-    return newTx;
+      return { success: true, transaction: newTx };
+    } catch (err: unknown) {
+      console.error('Failed to save transaction:', err);
+      return { success: false, error: 'Terjadi gangguan jaringan ke server. Silakan coba kembali.' };
+    }
   };
 
   // Transfer payment creation
-  const createTransferTransaction = (
+  const createTransferTransaction = async (
     methodName: string,
     transferBank: string,
     proofUrl: string,
     isConfirmedDirectly: boolean,
     customerName?: string,
     customerPhone?: string
-  ): Transaction => {
+  ): Promise<{ success: boolean; transaction?: Transaction; error?: string }> => {
     if (!isSuperAdmin) {
       if (attendanceStatus === 'not_started') {
-        alert('Transaksi Ditolak: Anda belum melakukan Absen Masuk hari ini. Silakan mulai hari kerja terlebih dahulu.');
         setIsCheckInModalOpen(true);
-        return {} as Transaction;
+        return { success: false, error: 'Transaksi Ditolak: Anda belum melakukan Absen Masuk hari ini. Silakan mulai hari kerja terlebih dahulu.' };
       }
       if (attendanceStatus === 'completed') {
-        alert('Transaksi Ditolak: Hari kerja Anda hari ini sudah selesai.');
-        return {} as Transaction;
+        return { success: false, error: 'Transaksi Ditolak: Hari kerja Anda hari ini sudah selesai.' };
       }
+    }
+
+    if (cart.length === 0) {
+      return { success: false, error: 'Keranjang belanja masih kosong.' };
     }
 
     const items = cart.map(item => ({
       productId: item.product.id,
-      name: item.product.name,
-      brand: item.product.brand,
-      price: item.product.price,
       quantity: item.quantity,
-      subtotal: item.product.price * item.quantity,
       selectedColor: item.selectedColor,
       selectedSize: item.selectedSize,
       variantId: item.variantId,
     }));
 
-    const now = new Date().toISOString();
-    const newTx: Transaction = {
-      id: `TRX-${Date.now()}`,
-      invoiceNumber: generateInvoiceNumber(),
-      date: now,
-      cashierName: currentUser?.name || cashier.name,
-      items,
-      subtotal: cartSubtotal,
-      tax: 0,
-      discount: cartDiscount,
-      total: cartTotal,
-      paymentMethod: methodName,
-      paymentMethodType: 'TRANSFER',
-      status: isConfirmedDirectly ? 'LUNAS' : 'MENUNGGU_KONFIRMASI',
-      transferBank,
-      transferProofUrl: proofUrl,
-      transferProofVerified: isConfirmedDirectly,
-      transferConfirmedAt: isConfirmedDirectly ? now : undefined,
-      transferConfirmedBy: isConfirmedDirectly ? (currentUser?.name || cashier.name) : undefined,
-      customerName: customerName?.trim() || undefined,
-      customerPhone: customerPhone?.trim() || undefined,
-      attendanceId: attendance?.id || undefined,
-    };
+    // FIX #3: Gunakan crypto.randomUUID() untuk idempotency key yang proper.
+    // Key dibuat SEKALI sebelum request dan digunakan kembali jika ada retry.
+    const idempotencyKey = `pos-trf-${crypto.randomUUID()}`;
 
-    deductStock(items);
-    setTransactions(prev => [newTx, ...prev]);
-    clearCart();
-    setIsCheckoutOpen(false);
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: {
+          ...authHeaders(),
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+          items,
+          paymentMethod: methodName,
+          discount: cartDiscount,
+          transferBank,
+          transferProofUrl: proofUrl,
+          transferProofVerified: isConfirmedDirectly,
+          customerName: customerName?.trim() || undefined,
+          customerPhone: customerPhone?.trim() || undefined,
+        }),
+      });
 
-    if (isConfirmedDirectly) {
-      setSelectedReceipt(newTx);
-    }
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Gagal memproses transaksi transfer.' };
+      }
 
-    fetch('/api/transactions', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(newTx),
-    }).then(() => {
+      const newTx: Transaction = data;
+      deductStock(items);
+      setTransactions(prev => [newTx, ...prev]);
+      clearCart();
+      setIsCheckoutOpen(false);
+      if (isConfirmedDirectly) {
+        setSelectedReceipt(newTx);
+      }
+
       refreshAttendance();
       fetchTodaySummary();
-    }).catch(err => console.error('Failed to save transfer transaction to Neon DB:', err));
-
-    return newTx;
+      return { success: true, transaction: newTx };
+    } catch (err: unknown) {
+      console.error('Failed to save transfer transaction:', err);
+      return { success: false, error: 'Terjadi gangguan jaringan ke server. Silakan coba kembali.' };
+    }
   };
 
   const confirmTransferPayment = (transactionId: string) => {
@@ -1268,42 +1259,70 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).catch(err => console.error('Failed to confirm transaction in Neon DB:', err));
   };
 
-  const cancelTransaction = (transactionId: string) => {
-    setTransactions(prev =>
-      prev.map(tx => {
-        if (tx.id === transactionId) {
-          tx.items.forEach(it => {
-            setProducts(prods =>
-              prods.map(p => {
-                if (p.id === it.productId) {
-                  let vars = p.variants ? [...p.variants] : [];
-                  if (vars.length > 0 && (it.selectedColor || it.selectedSize)) {
-                    vars = vars.map(v => {
-                      const matchC = !it.selectedColor || v.color.toLowerCase() === it.selectedColor.toLowerCase();
-                      const matchS = !it.selectedSize || v.size.toLowerCase() === it.selectedSize.toLowerCase();
-                      if (matchC && matchS) {
-                        return { ...v, stock: v.stock + it.quantity };
-                      }
-                      return v;
-                    });
-                  }
-                  const newTotal = vars.length > 0 ? vars.reduce((s, v) => s + v.stock, 0) : p.stock + it.quantity;
-                  return { ...p, stock: newTotal, variants: vars };
-                }
-                return p;
-              })
-            );
-          });
-          return { ...tx, status: 'BATAL' };
-        }
-        return tx;
-      })
-    );
+  // FIX #1: cancelTransaction sekarang async dan backend-first.
+  // State lokal HANYA diperbarui setelah backend mengonfirmasi pembatalan.
+  const cancelTransaction = async (transactionId: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`/api/transactions/${transactionId}/cancel`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+      });
 
-    fetch(`/api/transactions/${transactionId}/cancel`, {
-      method: 'PATCH',
-      headers: authHeaders(),
-    }).catch(err => console.error('Failed to cancel transaction in Neon DB:', err));
+      const data = await res.json();
+
+      if (!res.ok) {
+        // Backend menolak pembatalan (misal: sudah dibatalkan, transaksi tidak ada)
+        // JANGAN perbarui state lokal.
+        return {
+          success: false,
+          error: data.error || 'Transaksi gagal dibatalkan.'
+        };
+      }
+
+      // Backend sukses — baru perbarui state lokal sesuai hasil DB
+      // Backend sudah mengembalikan stok secara atomic, sinkronkan UI
+      setTransactions(prev =>
+        prev.map(tx =>
+          tx.id === transactionId ? { ...tx, status: 'BATAL' } : tx
+        )
+      );
+
+      // Perbarui stok lokal supaya UI sinkron dengan DB
+      // (backend sudah atomic restore, ini hanya untuk tampilan)
+      setTransactions(prev => {
+        const cancelledTx = prev.find(tx => tx.id === transactionId);
+        if (cancelledTx) {
+          setProducts(prods =>
+            prods.map(prod => {
+              const matchingItems = cancelledTx.items.filter(it => it.productId === prod.id);
+              if (matchingItems.length === 0) return prod;
+              let updatedVars = prod.variants ? [...prod.variants] : [];
+              for (const it of matchingItems) {
+                if (updatedVars.length > 0 && (it.selectedColor || it.selectedSize)) {
+                  updatedVars = updatedVars.map(v => {
+                    const matchC = !it.selectedColor || v.color.toLowerCase() === it.selectedColor.toLowerCase();
+                    const matchS = !it.selectedSize || v.size.toLowerCase() === it.selectedSize.toLowerCase();
+                    if (matchC && matchS) return { ...v, stock: v.stock + it.quantity };
+                    return v;
+                  });
+                }
+              }
+              const newTotal = updatedVars.length > 0
+                ? updatedVars.reduce((s, v) => s + v.stock, 0)
+                : prod.stock + matchingItems.reduce((s, it) => s + it.quantity, 0);
+              return { ...prod, stock: newTotal, variants: updatedVars };
+            })
+          );
+        }
+        return prev;
+      });
+
+      return { success: true };
+    } catch (err: unknown) {
+      // Network error — JANGAN perbarui state lokal
+      console.error('Cancel transaction network error:', err);
+      return { success: false, error: 'Gagal terhubung ke server. Silakan coba lagi.' };
+    }
   };
 
   const pendingConfirmations = useMemo(() => {

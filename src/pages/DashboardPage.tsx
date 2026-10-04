@@ -43,6 +43,8 @@ export const DashboardPage: React.FC = () => {
   } = usePOS();
 
   const [previewProof, setPreviewProof] = useState<string | null>(null);
+  // FIX #1: Loading state untuk cancel — mencegah tombol ditekan berkali-kali
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTodaySummary();
@@ -580,14 +582,21 @@ export const DashboardPage: React.FC = () => {
 
                   <div className="flex items-center gap-1.5 ml-auto">
                     <button
-                      onClick={() => {
+                      onClick={async () => {
+                        if (cancellingId === tx.id) return;
                         if (confirm(`Batalkan transaksi ${tx.invoiceNumber}? Stok produk akan dikembalikan.`)) {
-                          cancelTransaction(tx.id);
+                          setCancellingId(tx.id);
+                          const result = await cancelTransaction(tx.id);
+                          setCancellingId(null);
+                          if (!result.success) {
+                            alert(result.error || 'Transaksi gagal dibatalkan.');
+                          }
                         }
                       }}
-                      className="py-1.5 px-3 rounded-xl border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 text-xs font-semibold transition-colors"
+                      disabled={cancellingId === tx.id}
+                      className="py-1.5 px-3 rounded-xl border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Tolak
+                      {cancellingId === tx.id ? 'Membatalkan...' : 'Tolak'}
                     </button>
 
                     <button

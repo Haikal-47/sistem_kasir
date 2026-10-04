@@ -35,7 +35,7 @@ if (!AUTH_SECRET) {
   process.exit(1);
 }
 
-const createToken = (user) => {
+export const createToken = (user) => {
   const payload = JSON.stringify({
     id: user.id,
     username: user.username,
@@ -970,7 +970,19 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
 
 router.get('/transactions', requireAuth, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM transactions ORDER BY date DESC');
+    let result;
+    if (req.user && (req.user.role === 'super_admin' || req.user.role === 'admin')) {
+      result = await pool.query('SELECT * FROM transactions ORDER BY date DESC');
+    } else {
+      result = await pool.query(
+        `SELECT * FROM transactions 
+         WHERE user_id = $1 
+            OR attendance_id IN (SELECT id FROM cashier_attendances WHERE user_id = $1)
+            OR cashier_name = $2
+         ORDER BY date DESC`,
+        [req.user.id, req.user.name]
+      );
+    }
     const transactions = result.rows.map(r => ({
       id: r.id,
       invoiceNumber: r.invoice_number,
@@ -994,10 +1006,12 @@ router.get('/transactions', requireAuth, async (req, res) => {
       customerName: r.customer_name || undefined,
       customerPhone: r.customer_phone || undefined,
       attendanceId: r.attendance_id || undefined,
+      userId: r.user_id || undefined,
     }));
     res.json(transactions);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[GET /transactions ERROR]:', error);
+    res.status(500).json({ error: 'Gagal memuat data transaksi.' });
   }
 });
 
@@ -1006,34 +1020,85 @@ const getJakartaDate = () => {
 };
 
 router.post('/transactions', requireAuth, async (req, res) => {
+  // ── 1. Idempotency Check (Early return on duplicated submit) ──
+  const idempotencyKey = String(
+    req.headers['idempotency-key'] ||
+    req.headers['x-idempotency-key'] ||
+    req.body.idempotencyKey ||
+    ''
+  ).trim();
+
+  if (idempotencyKey) {
+    try {
+      const existing = await pool.query(
+        'SELECT response_body FROM idempotency_keys WHERE key = $1',
+        [idempotencyKey]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(200).json(existing.rows[0].response_body);
+      }
+    } catch (err) {
+      console.error('[Idempotency Pre-Check Error]:', err);
+    }
+  }
+
+  // ── 2. Request Payload Validation ──
+  const {
+    items,
+    paymentMethod,
+    cashGiven,
+    discount,
+    transferBank,
+    transferProofUrl,
+    transferProofVerified,
+    customerNote,
+    customerName,
+    customerPhone
+  } = req.body;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Permintaan tidak valid: Daftar item belanja tidak boleh kosong.' });
+  }
+
+  if (items.length > 100) {
+    return res.status(400).json({ error: 'Permintaan tidak valid: Jumlah item melebihi batas maksimum (100 item).' });
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item || typeof item.productId !== 'string' || !item.productId.trim()) {
+      return res.status(400).json({ error: `Permintaan tidak valid: Item ke-${i + 1} tidak memiliki productId yang valid.` });
+    }
+    if (!Number.isInteger(item.quantity) || item.quantity <= 0 || item.quantity > 1000) {
+      return res.status(400).json({ error: `Permintaan tidak valid: Jumlah (quantity) untuk produk "${item.productId}" harus berupa bilangan bulat antara 1 dan 1000.` });
+    }
+  }
+
+  if (typeof paymentMethod !== 'string' || !paymentMethod.trim()) {
+    return res.status(400).json({ error: 'Permintaan tidak valid: Metode pembayaran wajib diisi.' });
+  }
+
+  const rawDiscount = Number(discount || 0);
+  if (isNaN(rawDiscount) || !isFinite(rawDiscount) || rawDiscount < 0) {
+    return res.status(400).json({ error: 'Permintaan tidak valid: Nilai diskon tidak boleh negatif atau tidak valid.' });
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const {
-      id,
-      invoiceNumber,
-      date,
-      cashierName,
-      items,
-      subtotal,
-      tax,
-      discount,
-      total,
-      paymentMethod,
-      status,
-      cashGiven,
-      changeAmount,
-      transferBank,
-      transferProofUrl,
-      transferProofVerified,
-      transferConfirmedAt,
-      transferConfirmedBy,
-      customerNote,
-      customerName,
-      customerPhone,
-    } = req.body;
 
-    // ── Attendance Validation (Prompt Rules 9, 21, 30, 31) ──
+    // ── 3. Validate Payment Method Whitelist from DB ──
+    const pmRes = await client.query('SELECT name, type FROM payment_methods WHERE is_active = true');
+    const matchedMethod = pmRes.rows.find(
+      m => m.name.toLowerCase() === paymentMethod.trim().toLowerCase()
+    );
+
+    if (!matchedMethod) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `Metode pembayaran "${paymentMethod}" tidak valid atau tidak aktif.` });
+    }
+
+    // ── 4. Attendance Validation ──
     const todayJakarta = getJakartaDate();
     const cashierUserId = req.user.id;
 
@@ -1066,80 +1131,246 @@ router.post('/transactions', requireAuth, async (req, res) => {
       activeAttendanceId = att.id;
     }
 
+    // ── 5. Lock Product Rows (Deadlock-free via Sorted Product IDs) ──
+    const uniqueProductIds = [...new Set(items.map(it => it.productId.trim()))].sort();
+    const prodLockRes = await client.query(
+      `SELECT id, name, price, stock, variants, brand, barcode, unit, cost_price
+       FROM products
+       WHERE id = ANY($1)
+       FOR UPDATE`,
+      [uniqueProductIds]
+    );
+
+    const productMap = new Map();
+    for (const row of prodLockRes.rows) {
+      productMap.set(row.id, {
+        ...row,
+        price: Math.round(Number(row.price)),
+        stock: parseInt(row.stock, 10),
+        variants: typeof row.variants === 'string' ? JSON.parse(row.variants) : (row.variants || [])
+      });
+    }
+
+    // Verify all products exist
     for (const item of items) {
-      const prodRes = await client.query('SELECT stock, variants FROM products WHERE id = $1', [item.productId]);
-      if (prodRes.rows.length > 0) {
-        const prod = prodRes.rows[0];
-        let vars = typeof prod.variants === 'string' ? JSON.parse(prod.variants) : (prod.variants || []);
-        if (Array.isArray(vars) && vars.length > 0 && (item.selectedColor || item.selectedSize)) {
-          vars = vars.map(v => {
-            const matchColor = !item.selectedColor || v.color.toLowerCase() === item.selectedColor.toLowerCase();
-            const matchSize = !item.selectedSize || v.size.toLowerCase() === item.selectedSize.toLowerCase();
-            if (matchColor && matchSize) {
-              return { ...v, stock: Math.max(0, v.stock - item.quantity) };
-            }
-            return v;
-          });
-          const newTotalStock = vars.reduce((sum, v) => sum + v.stock, 0);
-          await client.query(
-            `UPDATE products SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
-            [newTotalStock, JSON.stringify(vars), item.productId]
-          );
-        } else {
-          await client.query(
-            `UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-            [item.quantity, item.productId]
-          );
-        }
+      if (!productMap.has(item.productId.trim())) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: `Produk dengan ID "${item.productId}" tidak ditemukan di database.` });
       }
     }
 
-    // Auto-migrate: add customer_name & customer_phone columns if not exist
-    try {
-      await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255)`);
-      await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(50)`);
-    } catch (_) { /* column may already exist */ }
+    // ── 6. Process Stock, Recalculate Subtotal (Backend Source of Truth) ──
+    let calculatedSubtotal = 0;
+    const verifiedItems = [];
 
-    const result = await client.query(
+    for (const item of items) {
+      const prod = productMap.get(item.productId.trim());
+      const itemPrice = prod.price; // Official DB price
+      const itemSubtotal = itemPrice * item.quantity;
+      calculatedSubtotal += itemSubtotal;
+
+      const vars = Array.isArray(prod.variants) ? prod.variants : [];
+      const hasVariantRequested = Boolean(item.variantId || item.selectedColor || item.selectedSize);
+
+      if (vars.length > 0 && hasVariantRequested) {
+        const variantIndex = vars.findIndex(v => {
+          if (item.variantId && v.id === item.variantId) return true;
+          const matchColor = !item.selectedColor || (v.color && v.color.toLowerCase() === item.selectedColor.trim().toLowerCase());
+          const matchSize = !item.selectedSize || (v.size && v.size.toLowerCase() === item.selectedSize.trim().toLowerCase());
+          return matchColor && matchSize;
+        });
+
+        if (variantIndex !== -1) {
+          const matchedVar = vars[variantIndex];
+          if (matchedVar.stock < item.quantity) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+              error: `Stok tidak mencukupi untuk "${prod.name} (${matchedVar.color || ''} ${matchedVar.size || ''})". Stok tersedia: ${matchedVar.stock}, diminta: ${item.quantity}.`,
+              code: 'INSUFFICIENT_STOCK'
+            });
+          }
+          matchedVar.stock -= item.quantity;
+          prod.stock = vars.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+        } else {
+          // If variant requested but not found in variant list, check main stock
+          if (prod.stock < item.quantity) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+              error: `Stok tidak mencukupi untuk produk "${prod.name}". Stok tersedia: ${prod.stock}, diminta: ${item.quantity}.`,
+              code: 'INSUFFICIENT_STOCK'
+            });
+          }
+          prod.stock -= item.quantity;
+        }
+      } else {
+        // Plain product without variants
+        if (prod.stock < item.quantity) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: `Stok tidak mencukupi untuk produk "${prod.name}". Stok tersedia: ${prod.stock}, diminta: ${item.quantity}.`,
+            code: 'INSUFFICIENT_STOCK'
+          });
+        }
+        prod.stock -= item.quantity;
+      }
+
+      verifiedItems.push({
+        productId: prod.id,
+        name: prod.name,
+        brand: prod.brand || '',
+        price: itemPrice,
+        quantity: item.quantity,
+        subtotal: itemSubtotal,
+        selectedColor: item.selectedColor ? String(item.selectedColor).trim() : undefined,
+        selectedSize: item.selectedSize ? String(item.selectedSize).trim() : undefined,
+        variantId: item.variantId || undefined,
+      });
+    }
+
+    // ── 7. Calculate Discount, Tax, and Final Total ──
+    const verifiedSubtotal = Math.round(calculatedSubtotal);
+    let verifiedDiscount = Math.round(rawDiscount);
+    if (verifiedDiscount > verifiedSubtotal) {
+      verifiedDiscount = verifiedSubtotal;
+    }
+    const verifiedTax = 0;
+    const verifiedTotal = Math.max(0, verifiedSubtotal - verifiedDiscount + verifiedTax);
+
+    // ── 8. Payment Specific Validation ──
+    let txStatus = 'LUNAS';
+    let finalCashGiven = null;
+    let finalChangeAmount = null;
+    let confirmedAt = null;
+    let confirmedBy = null;
+
+    if (matchedMethod.type === 'TUNAI') {
+      const given = Math.round(Number(cashGiven));
+      if (isNaN(given) || !isFinite(given) || given < verifiedTotal) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Nominal tunai yang diberikan (Rp ${(given || 0).toLocaleString('id-ID')}) kurang dari total belanja (Rp ${verifiedTotal.toLocaleString('id-ID')}).`
+        });
+      }
+      finalCashGiven = given;
+      finalChangeAmount = Math.round(given - verifiedTotal);
+      txStatus = 'LUNAS';
+    } else {
+      // TRANSFER / QRIS
+      finalCashGiven = null;
+      finalChangeAmount = null;
+      if (transferProofVerified === true) {
+        txStatus = 'LUNAS';
+        confirmedAt = new Date().toISOString();
+        confirmedBy = req.user.name;
+      } else {
+        txStatus = 'MENUNGGU_KONFIRMASI';
+        confirmedAt = null;
+        confirmedBy = null;
+      }
+    }
+
+    // ── 9. Update Product Stocks in DB ──
+    for (const prod of productMap.values()) {
+      const updRes = await client.query(
+        `UPDATE products
+         SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3 AND stock >= 0`,
+        [prod.stock, JSON.stringify(prod.variants), prod.id]
+      );
+      if (updRes.rowCount === 0) {
+        throw new Error(`Integritas stok gagal diperbarui untuk produk ID ${prod.id}`);
+      }
+    }
+
+    // ── 10. Concurrency-Safe Invoice Generation via PostgreSQL Sequence ──
+    const seqRes = await client.query("SELECT nextval('invoice_seq') as seq");
+    const seqNum = String(seqRes.rows[0].seq).padStart(4, '0');
+    const todayCompact = todayJakarta.replace(/-/g, '');
+    const invoiceNumber = `INV-${todayCompact}-${seqNum}`;
+    const transactionId = `TRX-${Date.now()}-${seqNum}`;
+    const txDate = new Date().toISOString();
+
+    // ── 11. Insert Transaction into Database (No DDL at runtime) ──
+    const insertRes = await client.query(
       `INSERT INTO transactions (
         id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total,
         payment_method, status, cash_given, change_amount, transfer_bank, transfer_proof_url,
         transfer_proof_verified, transfer_confirmed_at, transfer_confirmed_by, customer_note,
-        customer_name, customer_phone, attendance_id
+        customer_name, customer_phone, attendance_id, user_id
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
       ) RETURNING *`,
       [
-        id,
+        transactionId,
         invoiceNumber,
-        date,
-        cashierName,
-        JSON.stringify(items),
-        subtotal,
-        tax || 0,
-        discount || 0,
-        total,
-        paymentMethod,
-        status,
-        cashGiven || null,
-        changeAmount || null,
-        transferBank || null,
-        transferProofUrl || null,
-        transferProofVerified || false,
-        transferConfirmedAt || null,
-        transferConfirmedBy || null,
-        customerNote || null,
-        customerName || null,
-        customerPhone || null,
-        activeAttendanceId
+        txDate,
+        req.user.name,
+        JSON.stringify(verifiedItems),
+        verifiedSubtotal,
+        verifiedTax,
+        verifiedDiscount,
+        verifiedTotal,
+        matchedMethod.name,
+        txStatus,
+        finalCashGiven,
+        finalChangeAmount,
+        transferBank ? String(transferBank).trim() : null,
+        transferProofUrl ? String(transferProofUrl).trim() : null,
+        Boolean(transferProofVerified),
+        confirmedAt,
+        confirmedBy,
+        customerNote ? String(customerNote).trim() : null,
+        customerName ? String(customerName).trim() : null,
+        customerPhone ? String(customerPhone).trim() : null,
+        activeAttendanceId,
+        req.user.id
       ]
     );
 
+    const r = insertRes.rows[0];
+    const responsePayload = {
+      id: r.id,
+      invoiceNumber: r.invoice_number,
+      date: r.date instanceof Date ? r.date.toISOString() : r.date,
+      cashierName: r.cashier_name,
+      items: verifiedItems,
+      subtotal: parseFloat(r.subtotal),
+      tax: parseFloat(r.tax || 0),
+      discount: parseFloat(r.discount || 0),
+      total: parseFloat(r.total),
+      paymentMethod: r.payment_method,
+      status: r.status,
+      cashGiven: r.cash_given ? parseFloat(r.cash_given) : undefined,
+      changeAmount: r.change_amount ? parseFloat(r.change_amount) : undefined,
+      transferBank: r.transfer_bank || undefined,
+      transferProofUrl: r.transfer_proof_url || undefined,
+      transferProofVerified: r.transfer_proof_verified,
+      transferConfirmedAt: r.transfer_confirmed_at ? (r.transfer_confirmed_at.toISOString ? r.transfer_confirmed_at.toISOString() : r.transfer_confirmed_at) : undefined,
+      transferConfirmedBy: r.transfer_confirmed_by || undefined,
+      customerNote: r.customer_note || undefined,
+      customerName: r.customer_name || undefined,
+      customerPhone: r.customer_phone || undefined,
+      attendanceId: r.attendance_id || undefined,
+      userId: r.user_id || undefined,
+    };
+
+    // ── 12. Save Idempotency Key ──
+    if (idempotencyKey) {
+      await client.query(
+        `INSERT INTO idempotency_keys (key, transaction_id, response_body)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (key) DO NOTHING`,
+        [idempotencyKey, transactionId, JSON.stringify(responsePayload)]
+      );
+    }
+
     await client.query('COMMIT');
-    res.status(201).json({ ...req.body, id: result.rows[0].id, attendanceId: result.rows[0].attendance_id });
+    return res.status(201).json(responsePayload);
+
   } catch (error) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: error.message });
+    console.error('[POST /transactions ERROR]:', error);
+    return res.status(500).json({ error: 'Transaksi gagal diproses. Silakan coba kembali.' });
   } finally {
     client.release();
   }
@@ -1157,14 +1388,15 @@ router.patch('/transactions/:id/confirm', requireAdmin, async (req, res) => {
            transfer_confirmed_by = $1
        WHERE id = $2
        RETURNING *`,
-      [confirmedBy || 'Kasir', id]
+      [confirmedBy || req.user.name || 'Admin', id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Transaction not found' });
+      return res.status(404).json({ error: 'Transaksi tidak ditemukan.' });
     }
     res.json({ success: true, transaction: result.rows[0] });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[PATCH /confirm ERROR]:', error);
+    res.status(500).json({ error: 'Gagal mengonfirmasi transaksi.' });
   }
 });
 
@@ -1177,7 +1409,7 @@ router.patch('/transactions/:id/cancel', requireAdmin, async (req, res) => {
     const txRes = await client.query(`SELECT * FROM transactions WHERE id = $1 FOR UPDATE`, [id]);
     if (txRes.rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Transaction not found' });
+      return res.status(404).json({ error: 'Transaksi tidak ditemukan.' });
     }
 
     const tx = txRes.rows[0];
@@ -1188,7 +1420,7 @@ router.patch('/transactions/:id/cancel', requireAdmin, async (req, res) => {
     const items = typeof tx.items === 'string' ? JSON.parse(tx.items) : tx.items;
 
     for (const item of items) {
-      const prodRes = await client.query('SELECT stock, variants FROM products WHERE id = $1', [item.productId]);
+      const prodRes = await client.query('SELECT stock, variants FROM products WHERE id = $1 FOR UPDATE', [item.productId]);
       if (prodRes.rows.length > 0) {
         const prod = prodRes.rows[0];
         let vars = typeof prod.variants === 'string' ? JSON.parse(prod.variants) : (prod.variants || []);
@@ -1220,7 +1452,8 @@ router.patch('/transactions/:id/cancel', requireAdmin, async (req, res) => {
     res.json({ success: true, id, status: 'BATAL' });
   } catch (error) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: error.message });
+    console.error('[PATCH /cancel ERROR]:', error);
+    res.status(500).json({ error: 'Gagal membatalkan transaksi.' });
   } finally {
     client.release();
   }
