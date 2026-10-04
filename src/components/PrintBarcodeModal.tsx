@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Product } from '../types';
 import { formatRupiah } from '../utils/formatters';
 import { BarcodeRenderer } from './BarcodeRenderer';
-import { Printer, X, Tag, Sliders, CheckSquare, Square } from 'lucide-react';
+import { Printer, X, Tag, Sliders, CheckSquare, Square, Sparkles } from 'lucide-react';
 
 interface PrintBarcodeModalProps {
   isOpen: boolean;
@@ -26,12 +26,12 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
 
   if (!isOpen) return null;
 
-  const targetProducts = selectedProduct 
-    ? [selectedProduct] 
+  const targetProducts = selectedProduct
+    ? [selectedProduct]
     : products.filter(p => selectedProductIds.includes(p.id));
 
   const handleToggleProduct = (id: string) => {
-    setSelectedProductIds(prev => 
+    setSelectedProductIds(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
   };
@@ -48,7 +48,7 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
     window.print();
   };
 
-  // Render individual retail barcode label (Revamped Modern Hangtag Design)
+  // Render individual retail barcode label (Modern Hangtag Design)
   const renderBarcodeLabel = (product: Product, index: number) => {
     const isSheet = labelFormat === 'SHEET';
     return (
@@ -65,7 +65,7 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
 
         {/* Store & Category Pill */}
         <div className="w-full flex items-center justify-between gap-1 pb-1 border-b border-dashed border-slate-200 text-[8px]">
-          <span className="font-extrabold tracking-wider text-slate-850 uppercase truncate max-w-[95px]">
+          <span className="font-extrabold tracking-wider text-slate-800 uppercase truncate max-w-[95px]">
             {product.brand || 'ARFA FASHION'}
           </span>
           <span className="font-bold text-[7px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/60 uppercase shrink-0 truncate max-w-[70px]">
@@ -107,7 +107,6 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
     );
   };
 
-
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col max-h-[92vh] border border-slate-200">
@@ -119,7 +118,12 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
               <Tag className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base">Cetak Label Barcode Produk</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-base">Cetak Label Barcode Produk</h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 flex items-center gap-1">
+                  <Sparkles className="w-2.5 h-2.5" /> Modern Hangtag
+                </span>
+              </div>
               <p className="text-xs text-slate-400">
                 {selectedProduct ? `Mencetak stiker barcode: ${selectedProduct.name}` : 'Pilih produk untuk mencetak stiker harga & barcode'}
               </p>
@@ -146,7 +150,7 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
                   onClick={() => setCopies(num)}
                   className={`py-1 px-2.5 rounded-lg font-bold border transition-colors ${
                     copies === num
-                      ? 'bg-slate-900 text-white border-slate-900'
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                       : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                   }`}
                 >
@@ -163,7 +167,7 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
             <select
               value={labelFormat}
               onChange={(e) => setLabelFormat(e.target.value as any)}
-              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-800 outline-hidden"
+              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-800 outline-hidden focus:border-brand-500 shadow-2xs"
             >
               <option value="SHEET">Kertas A4 Biasa (4 kolom/baris)</option>
               <option value="THERMAL">Printer Label Thermal (50x30mm)</option>
@@ -225,44 +229,45 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
             )}
 
             {targetProducts.length === 0 && (
-              <div className="p-12 text-center text-slate-400 text-xs">
-                Pilih minimal 1 produk untuk mencetak stiker barcode.
+              <div className="py-12 text-center text-slate-400 w-full font-medium text-xs">
+                Tidak ada produk yang dipilih untuk dicetak.
               </div>
             )}
           </div>
         </div>
 
-        {/* Footer Actions (Hidden in Print) */}
-        <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between print:hidden">
-          <div className="space-y-0.5">
-            <span className="text-xs text-slate-500">
-              Total stiker: <strong className="text-slate-900">{targetProducts.length * copies} label</strong>
-              {labelFormat === 'SHEET' && (
-                <span className="text-slate-400"> · sekitar {Math.ceil(targetProducts.length * copies / 16)} halaman A4</span>
-              )}
+        {/* Footer / Print Actions (Hidden in Print) */}
+        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
+          <div className="text-xs text-slate-500">
+            Total dicetak: <strong className="text-slate-800">{targetProducts.length * copies}</strong> label
+            {labelFormat === 'SHEET' && (
+              <span className="ml-1 text-[11px] text-slate-400">
+                (~{Math.ceil((targetProducts.length * copies) / 16)} lembar A4)
+              </span>
+            )}
+            <span className="block text-[10px] text-amber-700 mt-0.5">
+              💡 Tips cetak A4: Margin: <strong>None / Tidak Ada</strong>, Skala: <strong>100%</strong>, Aktifkan <strong>Cetak latar belakang</strong>
             </span>
-            <p className="text-[10px] text-amber-600 font-medium">
-              💡 Tips: Pilih <strong>A4 / Letter</strong> di dialog print, margin <strong>Tidak Ada / None</strong>, skala <strong>100%</strong>
-            </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-100 transition-colors"
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
             >
               Batal
             </button>
             <button
               onClick={handlePrint}
               disabled={targetProducts.length === 0}
-              className="py-2.5 px-5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Printer className="w-4 h-4" />
-              <span>Cetak Sekarang (Print)</span>
+              <span>Cetak Sekarang</span>
             </button>
           </div>
         </div>
+
       </div>
     </div>
   );
