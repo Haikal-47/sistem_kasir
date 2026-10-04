@@ -48,51 +48,58 @@ export const PrintBarcodeModal: React.FC<PrintBarcodeModalProps> = ({
     window.print();
   };
 
-  // Render individual retail barcode label
+  // Render individual retail barcode label (Revamped Modern Hangtag Design)
   const renderBarcodeLabel = (product: Product, index: number) => {
+    const isSheet = labelFormat === 'SHEET';
     return (
       <div
         key={`${product.id}-${index}`}
-        className="barcode-label-card bg-white border border-slate-200 rounded-lg p-2 flex flex-col justify-between items-center text-center shadow-sm select-none box-border print:border-slate-400 print:rounded-none print:shadow-none"
-        style={labelFormat === 'SHEET'
-          ? { width: '178px', minHeight: '130px' }
-          : { width: '180px', minHeight: '112px' }
+        className="barcode-label-card group relative bg-white border border-slate-200/90 rounded-2xl p-2.5 flex flex-col justify-between items-center text-center shadow-xs hover:shadow-md transition-all duration-200 select-none box-border print:border-slate-400 print:rounded-none print:shadow-none"
+        style={isSheet
+          ? { width: '182px', minHeight: '136px' }
+          : { width: '180px', minHeight: '116px' }
         }
       >
-        {/* Store & Category */}
-        <div className="w-full flex items-center justify-between border-b border-dashed border-slate-300 pb-1 text-[8px] font-bold text-slate-500 uppercase">
-          <span>ARFA FASHION</span>
-          <span className="truncate max-w-[90px] text-right">{product.category}</span>
+        {/* Subtle Hangtag Punch Hole for Modern Fashion Retail Aesthetic */}
+        <div className="w-2.5 h-2.5 rounded-full bg-slate-100 border border-slate-300 mx-auto -mt-0.5 mb-1 print:border-slate-400 shadow-inner" />
+
+        {/* Store & Category Pill */}
+        <div className="w-full flex items-center justify-between gap-1 pb-1 border-b border-dashed border-slate-200 text-[8px]">
+          <span className="font-extrabold tracking-wider text-slate-850 uppercase truncate max-w-[95px]">
+            {product.brand || 'ARFA FASHION'}
+          </span>
+          <span className="font-bold text-[7px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/60 uppercase shrink-0 truncate max-w-[70px]">
+            {product.category}
+          </span>
         </div>
 
-        {/* Product Name */}
+        {/* Product Name & Variant */}
         <div className="my-1 w-full px-0.5">
           <h4 className="font-bold text-[10px] text-slate-900 leading-snug line-clamp-2 text-center">
             {product.name}
           </h4>
-          <span className="text-[8px] text-slate-500 font-medium">
-            {product.brand}
+          <span className="text-[7.5px] text-slate-400 font-medium uppercase tracking-wide">
+            {product.sizes && product.sizes.length > 0 ? `SIZE ${product.sizes.join('/')}` : (product.unit || 'PCS')}
           </span>
         </div>
 
         {/* Scannable Barcode with proper Quiet Zone */}
-        <div className="w-full flex justify-center py-0.5 bg-white overflow-hidden">
+        <div className="w-full flex flex-col items-center justify-center py-0.5 bg-white overflow-hidden">
           <BarcodeRenderer
             value={product.barcode}
-            width={labelFormat === 'SHEET' ? 1.45 : 1.3}
-            height={labelFormat === 'SHEET' ? 44 : 38}
+            width={isSheet ? 1.4 : 1.3}
+            height={isSheet ? 40 : 36}
           />
+          {/* Monospace Digits with wide tracking for scannability and human readability */}
+          <span className="text-[8.5px] font-mono font-bold tracking-[0.22em] text-slate-800 -mt-0.5">
+            {product.barcode}
+          </span>
         </div>
 
-        {/* Barcode digits */}
-        <span className="text-[8px] font-mono font-bold tracking-widest text-slate-900 -mt-0.5">
-          {product.barcode}
-        </span>
-
-        {/* Price Tag */}
-        <div className="w-full pt-1 mt-0.5 border-t border-dashed border-slate-300 flex items-baseline justify-between text-slate-900">
-          <span className="text-[7px] uppercase font-bold text-slate-500">Harga:</span>
-          <span className="font-extrabold text-[12px] font-mono tracking-tight text-slate-950">
+        {/* Price Section */}
+        <div className="w-full pt-1 mt-0.5 border-t border-dashed border-slate-200 flex items-baseline justify-between text-slate-900">
+          <span className="text-[7.5px] uppercase font-bold text-slate-400 tracking-wider">HARGA PAS</span>
+          <span className="font-black text-[13px] font-mono tracking-tight text-slate-950">
             {formatRupiah(product.price)}
           </span>
         </div>
