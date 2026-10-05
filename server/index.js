@@ -1300,6 +1300,27 @@ app.post('/api/products', requireAdmin, async (req, res) => {
     if (variants && Array.isArray(variants) && hasDuplicateVariants(variants)) {
       return res.status(400).json({ error: 'Kombinasi warna dan ukuran variant sudah ada.' });
     }
+
+    if (variants && Array.isArray(variants)) {
+      for (const v of variants) {
+        if (v.stock !== undefined && (typeof v.stock !== 'number' || isNaN(v.stock) || v.stock < 0 || !Number.isInteger(v.stock))) {
+          return res.status(400).json({ error: 'Stok variant harus berupa bilangan bulat non-negatif (>= 0).' });
+        }
+      }
+    }
+
+    if (stock !== undefined && (typeof stock !== 'number' || isNaN(stock) || stock < 0 || !Number.isInteger(stock))) {
+      return res.status(400).json({ error: 'Stok produk harus berupa bilangan bulat non-negatif (>= 0).' });
+    }
+
+    if (price !== undefined && (typeof price !== 'number' || isNaN(price) || price < 0)) {
+      return res.status(400).json({ error: 'Harga produk harus berupa nilai non-negatif.' });
+    }
+
+    if (costPrice !== undefined && (typeof costPrice !== 'number' || isNaN(costPrice) || costPrice < 0)) {
+      return res.status(400).json({ error: 'Harga modal produk harus berupa nilai non-negatif.' });
+    }
+
     const finalStock = (variants && Array.isArray(variants) && variants.length > 0)
       ? variants.reduce((s, v) => s + (Number(v.stock) || 0), 0)
       : (stock || 0);
@@ -1330,8 +1351,7 @@ app.post('/api/products', requireAdmin, async (req, res) => {
       variants: r.variants,
     });
   } catch (error) {
-    console.error('Error creating product:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menambahkan produk.', error);
   }
 });
 
@@ -1343,6 +1363,27 @@ app.put('/api/products/:id', requireAdmin, async (req, res) => {
     if (variants && Array.isArray(variants) && hasDuplicateVariants(variants)) {
       return res.status(400).json({ error: 'Kombinasi warna dan ukuran variant sudah ada.' });
     }
+
+    if (variants && Array.isArray(variants)) {
+      for (const v of variants) {
+        if (v.stock !== undefined && (typeof v.stock !== 'number' || isNaN(v.stock) || v.stock < 0 || !Number.isInteger(v.stock))) {
+          return res.status(400).json({ error: 'Stok variant harus berupa bilangan bulat non-negatif (>= 0).' });
+        }
+      }
+    }
+
+    if (stock !== undefined && (typeof stock !== 'number' || isNaN(stock) || stock < 0 || !Number.isInteger(stock))) {
+      return res.status(400).json({ error: 'Stok produk harus berupa bilangan bulat non-negatif (>= 0).' });
+    }
+
+    if (price !== undefined && (typeof price !== 'number' || isNaN(price) || price < 0)) {
+      return res.status(400).json({ error: 'Harga produk harus berupa nilai non-negatif.' });
+    }
+
+    if (costPrice !== undefined && (typeof costPrice !== 'number' || isNaN(costPrice) || costPrice < 0)) {
+      return res.status(400).json({ error: 'Harga modal produk harus berupa nilai non-negatif.' });
+    }
+
     const finalStock = (variants && Array.isArray(variants) && variants.length > 0)
       ? variants.reduce((s, v) => s + (Number(v.stock) || 0), 0)
       : stock;
@@ -1392,19 +1433,29 @@ app.put('/api/products/:id', requireAdmin, async (req, res) => {
       variants: typeof r.variants === 'string' ? JSON.parse(r.variants) : r.variants,
     });
   } catch (error) {
-    console.error('Error updating product:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memperbarui produk.', error);
   }
 });
 
 // PATCH /api/products/:id/stock (Admin Only) - Quick restock or adjustment
 app.patch('/api/products/:id/stock', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
     const { variantId, deltaStock, newStock } = req.body;
 
-    const prodRes = await pool.query('SELECT stock, variants FROM products WHERE id = $1', [id]);
+    if (newStock !== undefined && (typeof newStock !== 'number' || isNaN(newStock) || newStock < 0 || !Number.isInteger(newStock))) {
+      return res.status(400).json({ error: 'Nilai stok baru (newStock) harus berupa bilangan bulat non-negatif (>= 0).' });
+    }
+
+    if (deltaStock !== undefined && (typeof deltaStock !== 'number' || isNaN(deltaStock) || !Number.isInteger(deltaStock))) {
+      return res.status(400).json({ error: 'Perubahan stok (deltaStock) harus berupa bilangan bulat.' });
+    }
+
+    await client.query('BEGIN');
+    const prodRes = await client.query('SELECT stock, variants FROM products WHERE id = $1 FOR UPDATE', [id]);
     if (prodRes.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Product not found' });
     }
 
@@ -1413,22 +1464,46 @@ app.patch('/api/products/:id/stock', requireAdmin, async (req, res) => {
     let updatedTotalStock = prod.stock;
 
     if (variantId && Array.isArray(vars) && vars.length > 0) {
-      vars = vars.map(v => {
-        if (v.id === variantId) {
-          const finalStock = typeof newStock === 'number' ? newStock : Math.max(0, v.stock + (deltaStock || 0));
-          return { ...v, stock: finalStock };
+      const vIdx = vars.findIndex(v => v.id === variantId);
+      if (vIdx === -1) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Variant tidak ditemukan.' });
+      }
+
+      let targetStock = vars[vIdx].stock;
+      if (typeof newStock === 'number') {
+        targetStock = newStock;
+      } else if (typeof deltaStock === 'number') {
+        if (targetStock + deltaStock < 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            error: `Stok variant tidak boleh bernilai negatif. Stok saat ini: ${targetStock}, perubahan: ${deltaStock}.`
+          });
         }
-        return v;
-      });
-      updatedTotalStock = vars.reduce((sum, v) => sum + v.stock, 0);
+        targetStock += deltaStock;
+      }
+
+      vars[vIdx].stock = targetStock;
+      updatedTotalStock = vars.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
     } else {
-      updatedTotalStock = typeof newStock === 'number' ? newStock : Math.max(0, prod.stock + (deltaStock || 0));
+      if (typeof newStock === 'number') {
+        updatedTotalStock = newStock;
+      } else if (typeof deltaStock === 'number') {
+        if (prod.stock + deltaStock < 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            error: `Stok produk tidak boleh bernilai negatif. Stok saat ini: ${prod.stock}, perubahan: ${deltaStock}.`
+          });
+        }
+        updatedTotalStock = prod.stock + deltaStock;
+      }
     }
 
-    const updateRes = await pool.query(
-      `UPDATE products SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *`,
+    const updateRes = await client.query(
+      `UPDATE products SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND $1 >= 0 RETURNING *`,
       [updatedTotalStock, JSON.stringify(vars), id]
     );
+    await client.query('COMMIT');
 
     const r = updateRes.rows[0];
     res.json({
@@ -1437,8 +1512,10 @@ app.patch('/api/products/:id/stock', requireAdmin, async (req, res) => {
       variants: typeof r.variants === 'string' ? JSON.parse(r.variants) : r.variants
     });
   } catch (error) {
-    console.error('Error updating product stock:', error);
-    res.status(500).json({ error: error.message });
+    await client.query('ROLLBACK').catch(() => {});
+    sendSafeError(res, 500, 'Gagal memperbarui stok produk.', error);
+  } finally {
+    client.release();
   }
 });
 
@@ -1446,11 +1523,26 @@ app.patch('/api/products/:id/stock', requireAdmin, async (req, res) => {
 app.delete('/api/products/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM products WHERE id = $1', [id]);
+
+    // Safety check: Don't allow deletion if product has historical transactions
+    const txCheck = await pool.query(
+      `SELECT 1 FROM transactions, jsonb_array_elements(items) AS it WHERE it->>'productId' = $1 OR it->>'product_id' = $1 LIMIT 1`,
+      [id]
+    );
+    if (txCheck.rows.length > 0) {
+      return res.status(409).json({
+        error: 'Produk tidak dapat dihapus karena sudah memiliki riwayat transaksi penjualan. Silakan kosongkan stok atau ubah status produk untuk menonaktifkannya.',
+        code: 'PRODUCT_HAS_TRANSACTIONS'
+      });
+    }
+
+    const delRes = await pool.query('DELETE FROM products WHERE id = $1', [id]);
+    if (delRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Produk tidak ditemukan.' });
+    }
     res.json({ success: true, id });
   } catch (error) {
-    console.error('Error deleting product:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menghapus produk.', error);
   }
 });
 
@@ -1659,6 +1751,19 @@ app.post('/api/transactions', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Concurrency / Idempotency protection against rapid duplicate requests
+    if (idempotencyKey) {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [idempotencyKey]);
+      const existingTx = await client.query(
+        'SELECT response_body FROM idempotency_keys WHERE key = $1',
+        [idempotencyKey]
+      );
+      if (existingTx.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(200).json(existingTx.rows[0].response_body);
+      }
+    }
 
     // ── 3. Validate Payment Method Whitelist from DB ──
     const pmRes = await client.query('SELECT name, type FROM payment_methods WHERE is_active = true');
