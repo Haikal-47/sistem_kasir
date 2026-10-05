@@ -29,3 +29,11 @@ dist-ssr
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Backups and database dumps
+backups/
+*.dump
+*.tar
+*.backup
+*.sql.gz
+
