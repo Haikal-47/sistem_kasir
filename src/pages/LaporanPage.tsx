@@ -171,25 +171,33 @@ export const LaporanPage: React.FC = () => {
   };
 
   const handleExportAbsensiCSV = () => {
-    const headers = ['Tanggal', 'Kasir', 'Jam Masuk', 'Jam Pulang', 'Modal Awal', 'Penjualan Tunai', 'Kas Ekspektasi', 'Kas Aktual', 'Selisih', 'Status', 'Catatan'];
+    const headers = [
+      'Tanggal', 'Kasir', 'Jam Masuk', 'Jam Pulang', 'Modal Awal', 
+      'Total Transaksi', 'Total Penjualan', 'Cash (Tunai)', 'Transfer', 'QRIS', 
+      'Kas Seharusnya', 'Kas Aktual', 'Selisih', 'Status', 'Catatan'
+    ];
     const rows = attendances.map(a => [
       a.date,
       a.cashierName,
       a.checkIn ? new Date(a.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '-',
       a.checkOut ? new Date(a.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '-',
       a.openingCash,
+      a.stats?.totalTransactions ?? 0,
+      a.stats?.totalRevenue ?? 0,
       a.stats?.cashSales ?? 0,
+      a.stats?.transferSales ?? 0,
+      a.stats?.qrisSales ?? 0,
       a.expectedCash ?? (a.stats?.expectedCash ?? ''),
       a.actualCash ?? '',
       a.cashDifference ?? '',
       a.status === 'completed' ? 'Selesai' : a.status === 'working' ? 'Sedang Bekerja' : 'Belum Masuk',
-      a.note ?? ''
+      `"${(a.note ?? '').replace(/"/g, '""')}"`
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Laporan_Absensi_ARFA_${absensiStart}_${absensiEnd}.csv`);
+    link.setAttribute('download', `Laporan_Tutup_Kas_ARFA_${absensiStart}_${absensiEnd}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -508,15 +516,17 @@ export const LaporanPage: React.FC = () => {
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50 border-b border-slate-100">
                       <tr>
-                        <th className="text-left px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Tanggal</th>
-                        <th className="text-left px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Jam Masuk</th>
-                        <th className="text-left px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Jam Pulang</th>
-                        <th className="text-right px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Modal Awal</th>
-                        <th className="text-right px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Tunai</th>
-                        <th className="text-right px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Kas Ekspektasi</th>
-                        <th className="text-right px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Kas Aktual</th>
-                        <th className="text-right px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Selisih</th>
-                        <th className="text-center px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Status</th>
+                        <th className="text-left px-4 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Tanggal &amp; Kasir</th>
+                        <th className="text-right px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Modal</th>
+                        <th className="text-center px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Transaksi</th>
+                        <th className="text-right px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Penjualan</th>
+                        <th className="text-right px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Cash</th>
+                        <th className="text-right px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Transfer</th>
+                        <th className="text-right px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">QRIS</th>
+                        <th className="text-right px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Kas Seharusnya</th>
+                        <th className="text-right px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Kas Aktual</th>
+                        <th className="text-right px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Selisih</th>
+                        <th className="text-center px-3 py-3 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -524,35 +534,30 @@ export const LaporanPage: React.FC = () => {
                         const diff = att.cashDifference;
                         const expectedCash = att.expectedCash ?? att.stats?.expectedCash;
                         const cashSales = att.stats?.cashSales ?? 0;
-                        const totalOmset = att.stats?.totalRevenue ?? 0;
+                        const transferSales = att.stats?.transferSales ?? 0;
+                        const qrisSales = att.stats?.qrisSales ?? 0;
+                        const totalTransactions = att.stats?.totalTransactions ?? 0;
+                        const totalRevenue = att.stats?.totalRevenue ?? 0;
 
                         return (
                           <tr key={att.id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-4 py-3.5">
                               <div className="font-bold text-slate-900">{att.date}</div>
-                              <div className="text-[10px] text-slate-400">{att.cashierName}</div>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <div className="flex items-center gap-1.5 text-emerald-700 font-mono font-bold">
-                                <LogIn className="w-3 h-3" />
+                              <div className="text-[10px] text-slate-400 font-medium">Kasir: {att.cashierName}</div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
                                 {att.checkIn ? new Date(att.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : '-'}
+                                {att.checkOut ? ` - ${new Date(att.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })}` : ' (Aktif)'}
                               </div>
                             </td>
-                            <td className="px-4 py-3.5">
-                              {att.checkOut ? (
-                                <div className="flex items-center gap-1.5 text-rose-600 font-mono font-bold">
-                                  <LogOut className="w-3 h-3" />
-                                  {new Date(att.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })}
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 italic">-</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5 text-right font-mono text-slate-700">{formatRupiah(att.openingCash)}</td>
-                            <td className="px-4 py-3.5 text-right font-mono font-bold text-emerald-700">{formatRupiah(cashSales)}</td>
-                            <td className="px-4 py-3.5 text-right font-mono font-bold text-slate-800">{expectedCash != null ? formatRupiah(expectedCash) : '-'}</td>
-                            <td className="px-4 py-3.5 text-right font-mono font-bold text-slate-900">{att.actualCash != null ? formatRupiah(att.actualCash) : '-'}</td>
-                            <td className="px-4 py-3.5 text-right">
+                            <td className="px-3 py-3.5 text-right font-mono text-slate-700">{formatRupiah(att.openingCash)}</td>
+                            <td className="px-3 py-3.5 text-center font-mono font-bold text-slate-800">{totalTransactions}</td>
+                            <td className="px-3 py-3.5 text-right font-mono font-bold text-brand-600">{formatRupiah(totalRevenue)}</td>
+                            <td className="px-3 py-3.5 text-right font-mono font-bold text-emerald-700">{formatRupiah(cashSales)}</td>
+                            <td className="px-3 py-3.5 text-right font-mono font-bold text-sky-700">{formatRupiah(transferSales)}</td>
+                            <td className="px-3 py-3.5 text-right font-mono font-bold text-rose-700">{formatRupiah(qrisSales)}</td>
+                            <td className="px-3 py-3.5 text-right font-mono font-bold text-slate-900">{expectedCash != null ? formatRupiah(expectedCash) : '-'}</td>
+                            <td className="px-3 py-3.5 text-right font-mono font-bold text-amber-700">{att.actualCash != null ? formatRupiah(att.actualCash) : '-'}</td>
+                            <td className="px-3 py-3.5 text-right">
                               {diff == null ? (
                                 <span className="text-slate-400">-</span>
                               ) : diff === 0 ? (
@@ -566,7 +571,7 @@ export const LaporanPage: React.FC = () => {
                                 <div className="text-[10px] text-slate-400 max-w-32 truncate mt-0.5" title={att.note}>{att.note}</div>
                               )}
                             </td>
-                            <td className="px-4 py-3.5 text-center">
+                            <td className="px-3 py-3.5 text-center">
                               {att.status === 'completed' ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
                                   <CheckCircle2 className="w-3 h-3" /> Selesai

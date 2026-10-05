@@ -374,30 +374,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetchTodaySummary();
       return { success: true };
     } catch (err: unknown) {
-      if (attendance) {
-        const openingCash = attendance.openingCash || 500000;
-        const cashSales = attendance.stats?.cashSales || 0;
-        const expectedCash = openingCash + cashSales;
-        const diff = actualCash - expectedCash;
-        if (diff !== 0 && (!note || note.trim().length === 0)) {
-          return { success: false, error: 'Keterangan selisih wajib diisi karena terdapat selisih kas.' };
-        }
-        const updated: CashierAttendance = {
-          ...attendance,
-          checkOut: new Date().toISOString(),
-          expectedCash,
-          actualCash,
-          cashDifference: diff,
-          status: 'completed',
-          note: note || null
-        };
-        setAttendance(updated);
-        setAttendanceStatus('completed');
-        localStorage.setItem('pos_attendance_today', JSON.stringify(updated));
-        setIsCheckOutModalOpen(false);
-        return { success: true };
-      }
-      return { success: false, error: (err as Error).message };
+      console.error('Check-out network error:', err);
+      return { 
+        success: false, 
+        error: 'Gagal terhubung ke server untuk proses tutup kas. Silakan periksa koneksi internet dan coba lagi.' 
+      };
     }
   };
 

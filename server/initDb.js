@@ -118,6 +118,12 @@ export const initDatabase = async () => {
         CONSTRAINT unique_user_date UNIQUE(user_id, date)
       );
       ALTER TABLE cashier_attendances ADD COLUMN IF NOT EXISTS cashier_name VARCHAR(255);
+      ALTER TABLE cashier_attendances ADD COLUMN IF NOT EXISTS total_transactions INT DEFAULT 0;
+      ALTER TABLE cashier_attendances ADD COLUMN IF NOT EXISTS total_sales NUMERIC(15, 2) DEFAULT 0;
+      ALTER TABLE cashier_attendances ADD COLUMN IF NOT EXISTS total_cash NUMERIC(15, 2) DEFAULT 0;
+      ALTER TABLE cashier_attendances ADD COLUMN IF NOT EXISTS total_transfer NUMERIC(15, 2) DEFAULT 0;
+      ALTER TABLE cashier_attendances ADD COLUMN IF NOT EXISTS total_qris NUMERIC(15, 2) DEFAULT 0;
+      ALTER TABLE cashier_attendances ADD COLUMN IF NOT EXISTS closed_by VARCHAR(255);
 
       CREATE INDEX IF NOT EXISTS idx_attendances_date ON cashier_attendances(date);
       CREATE INDEX IF NOT EXISTS idx_attendances_user ON cashier_attendances(user_id);

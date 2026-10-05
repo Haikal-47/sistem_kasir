@@ -193,6 +193,17 @@ const formatAttendanceRow = (r, stats = null) => {
   } else if (typeof r.date === 'string' && r.date.includes('T')) {
     dateStr = r.date.slice(0, 10);
   }
+
+  const resolvedStats = stats || {
+    totalTransactions: r.total_transactions != null ? parseInt(r.total_transactions, 10) : 0,
+    totalRevenue: r.total_sales != null ? parseFloat(r.total_sales) : 0,
+    cashSales: r.total_cash != null ? parseFloat(r.total_cash) : 0,
+    qrisSales: r.total_qris != null ? parseFloat(r.total_qris) : 0,
+    transferSales: r.total_transfer != null ? parseFloat(r.total_transfer) : 0,
+    otherSales: 0,
+    expectedCash: r.expected_cash != null ? parseFloat(r.expected_cash) : parseFloat(r.opening_cash || 500000)
+  };
+
   return {
     id: r.id,
     userId: r.user_id,
@@ -201,12 +212,13 @@ const formatAttendanceRow = (r, stats = null) => {
     checkIn: r.check_in,
     checkOut: r.check_out || null,
     openingCash: parseFloat(r.opening_cash || 500000),
-    expectedCash: r.expected_cash != null ? parseFloat(r.expected_cash) : (stats?.expectedCash != null ? stats.expectedCash : parseFloat(r.opening_cash || 500000)),
+    expectedCash: r.expected_cash != null ? parseFloat(r.expected_cash) : (resolvedStats?.expectedCash != null ? resolvedStats.expectedCash : parseFloat(r.opening_cash || 500000)),
     actualCash: r.actual_cash != null ? parseFloat(r.actual_cash) : null,
     cashDifference: r.cash_difference != null ? parseFloat(r.cash_difference) : null,
     status: r.status,
     note: r.note || null,
-    stats: stats
+    closedBy: r.closed_by || null,
+    stats: resolvedStats
   };
 };
 
@@ -240,7 +252,7 @@ app.get('/api/attendance/today', async (req, res) => {
 
     const row = result.rows[0];
 
-    // Calculate today's stats (only for 'working' status)
+    // Calculate today's stats (for 'working' status or as fallback for 'completed')
     let stats = null;
     if (row.status === 'working' || row.status === 'completed') {
       const txResult = await pool.query(
@@ -253,7 +265,7 @@ app.get('/api/attendance/today', async (req, res) => {
 
       let cashSales = 0, transferSales = 0, qrisSales = 0, totalRevenue = 0, totalTx = 0;
       for (const tx of txResult.rows) {
-        const amount = parseFloat(tx.total_amount);
+        const amount = Math.round(Number(tx.total_amount));
         const count = parseInt(tx.tx_count, 10);
         totalRevenue += amount;
         totalTx += count;
@@ -263,13 +275,17 @@ app.get('/api/attendance/today', async (req, res) => {
         else transferSales += amount;
       }
 
-      const expectedCash = parseFloat(row.opening_cash || 500000) + cashSales;
+      const openingCash = Math.round(Number(row.opening_cash || 500000));
+      const expectedCash = row.status === 'completed' && row.expected_cash != null
+        ? Math.round(Number(row.expected_cash))
+        : openingCash + cashSales;
+
       stats = {
-        totalTransactions: totalTx,
-        totalRevenue,
-        cashSales,
-        qrisSales,
-        transferSales,
+        totalTransactions: row.status === 'completed' && row.total_transactions != null ? parseInt(row.total_transactions, 10) : totalTx,
+        totalRevenue: row.status === 'completed' && row.total_sales != null ? Math.round(Number(row.total_sales)) : totalRevenue,
+        cashSales: row.status === 'completed' && row.total_cash != null ? Math.round(Number(row.total_cash)) : cashSales,
+        qrisSales: row.status === 'completed' && row.total_qris != null ? Math.round(Number(row.total_qris)) : qrisSales,
+        transferSales: row.status === 'completed' && row.total_transfer != null ? Math.round(Number(row.total_transfer)) : transferSales,
         otherSales: 0,
         expectedCash
       };
@@ -296,64 +312,81 @@ app.post('/api/attendance/check-in', async (req, res) => {
     const today = getJakartaDateString();
     const userId = req.user.id;
 
-    // Check if already checked in today
-    const existing = await pool.query(
-      'SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2',
-      [userId, today]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    if (existing.rows.length > 0) {
-      const row = existing.rows[0];
-      if (row.status === 'working') {
-        return res.status(400).json({ error: 'Anda sudah absen masuk hari ini. Silakan tutup kas terlebih dahulu.' });
+      // Check if already checked in today with FOR UPDATE to prevent race condition
+      const existing = await client.query(
+        'SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2 FOR UPDATE',
+        [userId, today]
+      );
+
+      if (existing.rows.length > 0) {
+        const row = existing.rows[0];
+        await client.query('COMMIT');
+        if (row.status === 'working') {
+          return res.status(400).json({ 
+            error: 'Anda sudah absen masuk hari ini. Silakan tutup kas terlebih dahulu.',
+            code: 'SESSION_ALREADY_OPEN',
+            attendance: formatAttendanceRow(row)
+          });
+        }
+        if (row.status === 'completed') {
+          return res.status(400).json({ 
+            error: 'Hari kerja hari ini sudah ditutup. Absen ulang tidak diizinkan.',
+            code: 'SESSION_ALREADY_CLOSED',
+            attendance: formatAttendanceRow(row)
+          });
+        }
       }
-      if (row.status === 'completed') {
-        return res.status(400).json({ error: 'Hari kerja hari ini sudah ditutup. Absen ulang tidak diizinkan.' });
-      }
+
+      // Get cashier name from users table
+      const userResult = await client.query('SELECT name FROM users WHERE id = $1', [userId]);
+      const cashierName = userResult.rows[0]?.name || req.user.name || 'Gusti';
+
+      const id = `ATT-${Date.now()}`;
+      const OPENING_CASH = 500000; // Modal kas awal TETAP Rp500.000
+
+      const result = await client.query(
+        `INSERT INTO cashier_attendances (id, user_id, cashier_name, date, check_in, opening_cash, status)
+         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, $5, 'working')
+         RETURNING *`,
+        [id, userId, cashierName, today, OPENING_CASH]
+      );
+
+      await client.query('COMMIT');
+
+      const row = result.rows[0];
+      row.cashier_name = cashierName;
+
+      console.log(`✅ Check-in: ${cashierName} (${userId}) pada ${today}`);
+
+      return res.status(201).json({
+        success: true,
+        attendance: formatAttendanceRow(row, {
+          totalTransactions: 0,
+          totalRevenue: 0,
+          cashSales: 0,
+          qrisSales: 0,
+          transferSales: 0,
+          otherSales: 0,
+          expectedCash: OPENING_CASH
+        })
+      });
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
     }
-
-    // Get cashier name from users table
-    const userResult = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
-    const cashierName = userResult.rows[0]?.name || req.user.name || 'Gusti';
-
-    const id = `ATT-${Date.now()}`;
-    const OPENING_CASH = 500000; // Modal kas awal TETAP Rp500.000
-
-    const result = await pool.query(
-      `INSERT INTO cashier_attendances (id, user_id, cashier_name, date, check_in, opening_cash, status)
-       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, $5, 'working')
-       ON CONFLICT (user_id, date) DO UPDATE
-         SET status = 'working', check_in = CURRENT_TIMESTAMP
-       RETURNING *`,
-      [id, userId, cashierName, today, OPENING_CASH]
-    );
-
-    const row = result.rows[0];
-
-    // Add cashier_name from users lookup
-    row.cashier_name = cashierName;
-
-    console.log(`✅ Check-in: ${cashierName} (${userId}) pada ${today}`);
-
-    res.json({
-      success: true,
-      attendance: formatAttendanceRow(row, {
-        totalTransactions: 0,
-        totalRevenue: 0,
-        cashSales: 0,
-        qrisSales: 0,
-        transferSales: 0,
-        otherSales: 0,
-        expectedCash: OPENING_CASH
-      })
-    });
   } catch (error) {
     console.error('Error in POST /api/attendance/check-in:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// POST /api/attendance/check-out — Kasir Tutup Kas Harian (Absen Pulang)
+// POST /api/attendance/check-out — Kasir Tutup Kas Harian (Atomic & Concurrency-Safe)
 app.post('/api/attendance/check-out', async (req, res) => {
   try {
     if (!req.user) return res.status(401).json({ error: 'Sesi tidak valid.' });
@@ -363,92 +396,132 @@ app.post('/api/attendance/check-out', async (req, res) => {
 
     const { actualCash, note } = req.body;
 
-    if (actualCash == null || isNaN(Number(actualCash)) || Number(actualCash) < 0) {
-      return res.status(400).json({ error: 'Jumlah kas fisik harus diisi dengan benar.' });
+    // Strict validation of cash_actual (Step 16)
+    if (
+      actualCash === null ||
+      actualCash === undefined ||
+      typeof actualCash === 'boolean' ||
+      isNaN(Number(actualCash)) ||
+      !isFinite(Number(actualCash)) ||
+      Number(actualCash) < 0
+    ) {
+      return res.status(400).json({ error: 'Jumlah kas fisik harus diisi dengan angka valid dan tidak boleh negatif.' });
     }
 
+    const actualCashInt = Math.round(Number(actualCash));
     const today = getJakartaDateString();
     const userId = req.user.id;
 
-    const existing = await pool.query(
-      'SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2',
-      [userId, today]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    if (existing.rows.length === 0) {
-      return res.status(400).json({ error: 'Anda belum melakukan absen masuk hari ini.' });
-    }
+      // 1. Lock cash session row with FOR UPDATE
+      const sessionRes = await client.query(
+        'SELECT * FROM cashier_attendances WHERE user_id = $1 AND date = $2 FOR UPDATE',
+        [userId, today]
+      );
 
-    const row = existing.rows[0];
-    if (row.status === 'completed') {
-      return res.status(400).json({ error: 'Hari kerja sudah ditutup sebelumnya.' });
-    }
+      if (sessionRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Anda belum melakukan absen masuk hari ini.' });
+      }
 
-    // Calculate expected cash: opening_cash + total TUNAI transactions for this attendance
-    const txResult = await pool.query(
-      `SELECT SUM(total) as cash_total
-       FROM transactions
-       WHERE attendance_id = $1 AND status = 'LUNAS' AND UPPER(payment_method) = 'TUNAI'`,
-      [row.id]
-    );
+      const row = sessionRes.rows[0];
 
-    const cashSales = parseFloat(txResult.rows[0]?.cash_total || 0);
-    const openingCash = parseFloat(row.opening_cash || 500000);
-    const expectedCash = openingCash + cashSales;
-    const actualCashNum = Number(actualCash);
-    const cashDifference = actualCashNum - expectedCash;
+      // 2. Double close protection
+      if (row.status === 'completed') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Hari kerja sudah ditutup sebelumnya. Tutup kas hanya dapat dilakukan satu kali per hari.' });
+      }
 
-    // If there's a difference, note is required
-    if (cashDifference !== 0 && (!note || note.trim().length < 3)) {
-      return res.status(400).json({
-        error: `Terdapat selisih kas sebesar ${cashDifference >= 0 ? '+' : ''}Rp${Math.abs(cashDifference).toLocaleString('id-ID')}. Keterangan wajib diisi (min. 3 karakter).`
-      });
-    }
+      // 3. Calculate all completed transactions for this shift from DB (Backend Source of Truth)
+      const txResult = await client.query(
+        `SELECT payment_method, SUM(total) as total_amount, COUNT(*) as tx_count
+         FROM transactions
+         WHERE attendance_id = $1 AND status = 'LUNAS'
+         GROUP BY payment_method`,
+        [row.id]
+      );
 
-    // Get full stats for response
-    const allTxResult = await pool.query(
-      `SELECT payment_method, SUM(total) as total_amount, COUNT(*) as tx_count
-       FROM transactions
-       WHERE attendance_id = $1 AND status = 'LUNAS'
-       GROUP BY payment_method`,
-      [row.id]
-    );
+      let totalRevenue = 0;
+      let totalTx = 0;
+      let cashSales = 0;
+      let qrisSales = 0;
+      let transferSales = 0;
 
-    let totalRevenue = 0, totalTx = 0, qrisSales = 0, transferSales = 0;
-    for (const tx of allTxResult.rows) {
-      const amount = parseFloat(tx.total_amount);
-      totalRevenue += amount;
-      totalTx += parseInt(tx.tx_count, 10);
-      const methodUpper = (tx.payment_method || '').toUpperCase();
-      if (methodUpper.includes('QRIS')) qrisSales += amount;
-      else if (methodUpper !== 'TUNAI') transferSales += amount;
-    }
+      for (const tx of txResult.rows) {
+        const amount = Math.round(Number(tx.total_amount));
+        const count = parseInt(tx.tx_count, 10);
+        totalRevenue += amount;
+        totalTx += count;
 
-    const updateResult = await pool.query(
-      `UPDATE cashier_attendances
-       SET check_out = CURRENT_TIMESTAMP,
-           expected_cash = $1,
-           actual_cash = $2,
-           cash_difference = $3,
-           status = 'completed',
-           note = $4,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5
-       RETURNING *`,
-      [expectedCash, actualCashNum, cashDifference, note || null, row.id]
-    );
+        const methodUpper = (tx.payment_method || '').toUpperCase();
+        if (methodUpper === 'TUNAI') {
+          cashSales += amount;
+        } else if (methodUpper.includes('QRIS')) {
+          qrisSales += amount;
+        } else {
+          transferSales += amount;
+        }
+      }
 
-    const updatedRow = updateResult.rows[0];
+      const openingCash = Math.round(Number(row.opening_cash || 500000));
+      const expectedCash = openingCash + cashSales;
+      const cashDifference = actualCashInt - expectedCash;
 
-    // Get cashier name
-    const userResult = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
-    updatedRow.cashier_name = userResult.rows[0]?.name || req.user.name || 'Gusti';
+      // Note required if variance exists
+      if (cashDifference !== 0 && (!note || typeof note !== 'string' || note.trim().length < 3)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Terdapat selisih kas sebesar ${cashDifference >= 0 ? '+' : ''}Rp${Math.abs(cashDifference).toLocaleString('id-ID')}. Keterangan wajib diisi (min. 3 karakter).`
+        });
+      }
 
-    console.log(`✅ Check-out: ${updatedRow.cashier_name} pada ${today} | Selisih: ${cashDifference}`);
+      const closedByName = req.user.name || row.cashier_name || 'Gusti';
 
-    res.json({
-      success: true,
-      attendance: formatAttendanceRow(updatedRow, {
+      // 4. Update session atomically to completed with closing snapshot
+      const updateResult = await client.query(
+        `UPDATE cashier_attendances
+         SET check_out = CURRENT_TIMESTAMP,
+             expected_cash = $1,
+             actual_cash = $2,
+             cash_difference = $3,
+             total_transactions = $4,
+             total_sales = $5,
+             total_cash = $6,
+             total_transfer = $7,
+             total_qris = $8,
+             closed_by = $9,
+             status = 'completed',
+             note = $10,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $11
+         RETURNING *`,
+        [
+          expectedCash,
+          actualCashInt,
+          cashDifference,
+          totalTx,
+          totalRevenue,
+          cashSales,
+          transferSales,
+          qrisSales,
+          closedByName,
+          note ? note.trim() : null,
+          row.id
+        ]
+      );
+
+      await client.query('COMMIT');
+
+      const updatedRow = updateResult.rows[0];
+      const userResult = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
+      updatedRow.cashier_name = userResult.rows[0]?.name || closedByName;
+
+      console.log(`✅ Tutup Kas: ${updatedRow.cashier_name} pada ${today} | Expected: ${expectedCash} | Actual: ${actualCashInt} | Selisih: ${cashDifference}`);
+
+      const closingStats = {
         totalTransactions: totalTx,
         totalRevenue,
         cashSales,
@@ -456,8 +529,18 @@ app.post('/api/attendance/check-out', async (req, res) => {
         transferSales,
         otherSales: 0,
         expectedCash
-      })
-    });
+      };
+
+      res.json({
+        success: true,
+        attendance: formatAttendanceRow(updatedRow, closingStats)
+      });
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error('Error in POST /api/attendance/check-out:', error);
     res.status(500).json({ error: error.message });
@@ -494,7 +577,10 @@ app.get('/api/attendance/summary-today', async (req, res) => {
         date: today,
         openingCash: 500000,
         revenueToday: 0,
+        totalTransactions: 0,
         cashSales: 0,
+        transferSales: 0,
+        qrisSales: 0,
         expectedCash: 500000,
         actualCash: null,
         cashDifference: null,
@@ -516,7 +602,7 @@ app.get('/api/attendance/summary-today', async (req, res) => {
 
     let cashSales = 0, transferSales = 0, qrisSales = 0, totalRevenue = 0, totalTx = 0;
     for (const tx of txResult.rows) {
-      const amount = parseFloat(tx.total_amount);
+      const amount = Math.round(Number(tx.total_amount));
       const count = parseInt(tx.tx_count, 10);
       totalRevenue += amount;
       totalTx += count;
@@ -526,9 +612,21 @@ app.get('/api/attendance/summary-today', async (req, res) => {
       else transferSales += amount;
     }
 
-    const openingCash = parseFloat(row.opening_cash || 500000);
-    const expectedCash = openingCash + cashSales;
-    const stats = { totalTransactions: totalTx, totalRevenue, cashSales, qrisSales, transferSales, otherSales: 0, expectedCash };
+    const openingCash = Math.round(Number(row.opening_cash || 500000));
+    const computedExpectedCash = openingCash + cashSales;
+    const finalExpectedCash = row.status === 'completed' && row.expected_cash != null
+      ? Math.round(Number(row.expected_cash))
+      : computedExpectedCash;
+
+    const stats = {
+      totalTransactions: row.status === 'completed' && row.total_transactions != null ? parseInt(row.total_transactions, 10) : totalTx,
+      totalRevenue: row.status === 'completed' && row.total_sales != null ? Math.round(Number(row.total_sales)) : totalRevenue,
+      cashSales: row.status === 'completed' && row.total_cash != null ? Math.round(Number(row.total_cash)) : cashSales,
+      qrisSales: row.status === 'completed' && row.total_qris != null ? Math.round(Number(row.total_qris)) : qrisSales,
+      transferSales: row.status === 'completed' && row.total_transfer != null ? Math.round(Number(row.total_transfer)) : transferSales,
+      otherSales: 0,
+      expectedCash: finalExpectedCash
+    };
 
     res.json({
       status: row.status,
@@ -537,13 +635,14 @@ app.get('/api/attendance/summary-today', async (req, res) => {
       checkIn: row.check_in,
       checkOut: row.check_out,
       openingCash,
-      revenueToday: totalRevenue,
-      cashSales,
-      qrisSales,
-      transferSales,
-      expectedCash: row.status === 'completed' && row.expected_cash != null ? parseFloat(row.expected_cash) : expectedCash,
-      actualCash: row.actual_cash != null ? parseFloat(row.actual_cash) : null,
-      cashDifference: row.cash_difference != null ? parseFloat(row.cash_difference) : null,
+      revenueToday: stats.totalRevenue,
+      totalTransactions: stats.totalTransactions,
+      cashSales: stats.cashSales,
+      qrisSales: stats.qrisSales,
+      transferSales: stats.transferSales,
+      expectedCash: finalExpectedCash,
+      actualCash: row.actual_cash != null ? Math.round(Number(row.actual_cash)) : null,
+      cashDifference: row.cash_difference != null ? Math.round(Number(row.cash_difference)) : null,
       note: row.note || null,
       attendance: formatAttendanceRow(row, stats),
       stats

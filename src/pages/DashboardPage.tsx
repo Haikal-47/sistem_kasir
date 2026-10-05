@@ -350,80 +350,142 @@ export const DashboardPage: React.FC = () => {
           )}
 
           {attendanceStatus === 'working' && (
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 rounded-2xl bg-emerald-50/80 border border-emerald-300">
-              <div className="flex items-start sm:items-center gap-3">
-                <span className="w-4 h-4 rounded-full bg-emerald-500 ring-4 ring-emerald-200 animate-pulse shrink-0 mt-0.5 sm:mt-0" />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-emerald-950 text-base">🟢 Sedang Bekerja</span>
-                    <span className="text-xs bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-md font-bold">Kasir: {cashierName}</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-emerald-800 mt-1 font-medium">
-                    <span>Masuk: <strong className="font-mono">{checkInTimeFormatted} WIB</strong></span>
-                    <span>Modal Awal: <strong className="font-mono">{formatRupiah(attendance?.openingCash || 500000)}</strong></span>
-                    <span>Kas Seharusnya (Fisik): <strong className="font-mono font-bold text-emerald-950">{formatRupiah(attendance?.expectedCash || 500000)}</strong></span>
+            <div className="rounded-2xl bg-emerald-50/80 border border-emerald-300 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-emerald-200">
+                <div className="flex items-center gap-3">
+                  <span className="w-4 h-4 rounded-full bg-emerald-500 ring-4 ring-emerald-200 animate-pulse shrink-0" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-emerald-950 text-base">SHIFT HARI INI</span>
+                      <span className="text-xs bg-emerald-200 text-emerald-900 px-2.5 py-0.5 rounded-md font-bold">🟢 Sedang Bekerja</span>
+                    </div>
+                    <p className="text-xs text-emerald-800 mt-0.5">
+                      Kasir: <strong className="text-slate-900">{cashierName}</strong> • Masuk: <strong className="font-mono">{checkInTimeFormatted} WIB</strong>
+                    </p>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setActiveTab('transaksi')}
+                    className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ScanLine className="w-3.5 h-3.5" />
+                    <span>Buka POS (F2)</span>
+                  </button>
+                  <button
+                    onClick={() => setIsCheckOutModalOpen(true)}
+                    className="py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs shadow-md shadow-rose-600/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>TUTUP KAS</span>
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  onClick={() => setActiveTab('transaksi')}
-                  className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5"
-                >
-                  <ScanLine className="w-3.5 h-3.5" />
-                  <span>Kasir POS (F2)</span>
-                </button>
-                <button
-                  onClick={() => setIsCheckOutModalOpen(true)}
-                  className="py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Selesai / Absen Pulang</span>
-                </button>
+
+              {/* Grid 6 Angka Finansial Sesuai Step 12 */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 text-xs">
+                <div className="bg-white border border-emerald-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Modal Awal</span>
+                  <div className="font-mono font-bold text-slate-900 mt-0.5">{formatRupiah(attendance?.openingCash || 500000)}</div>
+                </div>
+                <div className="bg-white border border-emerald-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Total Transaksi</span>
+                  <div className="font-mono font-bold text-slate-900 mt-0.5">{todaySummary?.totalTransactions ?? todaySummary?.stats?.totalTransactions ?? attendance?.stats?.totalTransactions ?? completedTransactions.length}</div>
+                </div>
+                <div className="bg-white border border-emerald-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Penjualan</span>
+                  <div className="font-mono font-black text-brand-600 mt-0.5">{formatRupiah(todaySummary?.revenueToday ?? totalRevenue)}</div>
+                </div>
+                <div className="bg-white border border-emerald-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Cash (Tunai)</span>
+                  <div className="font-mono font-bold text-emerald-700 mt-0.5">{formatRupiah(todaySummary?.cashSales ?? attendance?.stats?.cashSales ?? 0)}</div>
+                </div>
+                <div className="bg-white border border-emerald-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Transfer</span>
+                  <div className="font-mono font-bold text-sky-700 mt-0.5">{formatRupiah(todaySummary?.transferSales ?? attendance?.stats?.transferSales ?? 0)}</div>
+                </div>
+                <div className="bg-white border border-emerald-200 rounded-xl p-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">QRIS</span>
+                  <div className="font-mono font-bold text-rose-700 mt-0.5">{formatRupiah(todaySummary?.qrisSales ?? attendance?.stats?.qrisSales ?? 0)}</div>
+                </div>
+                <div className="bg-emerald-600 text-white rounded-xl p-3 col-span-2 sm:col-span-1 shadow-xs">
+                  <span className="text-[10px] font-bold text-emerald-100 uppercase">Kas Seharusnya</span>
+                  <div className="font-mono font-black text-white mt-0.5 text-sm">{formatRupiah(todaySummary?.expectedCash ?? attendance?.expectedCash ?? 500000)}</div>
+                </div>
               </div>
             </div>
           )}
 
           {attendanceStatus === 'completed' && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-300">
-              <div className="flex items-start sm:items-center gap-3">
-                <span className="w-4 h-4 rounded-full bg-rose-500 ring-4 ring-rose-200 shrink-0 mt-0.5 sm:mt-0" />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-slate-900 text-base">🔴 Hari Kerja Selesai</span>
-                    <span className="text-xs bg-slate-200 text-slate-800 px-2 py-0.5 rounded-md font-bold">Kasir: {cashierName}</span>
+            <div className="rounded-2xl bg-slate-900 text-white border border-slate-800 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <span className="w-4 h-4 rounded-full bg-rose-500 ring-4 ring-rose-900 shrink-0" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-white text-base">Tutup Kas Berhasil</span>
+                      <span className="text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded-md font-bold uppercase">Status: CLOSED</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Kasir: <strong className="text-white">{cashierName}</strong> • Masuk: <strong className="font-mono text-slate-300">{checkInTimeFormatted} WIB</strong> • Pulang: <strong className="font-mono text-slate-300">{checkOutTimeFormatted} WIB</strong>
+                    </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 mt-1 font-medium">
-                    <span>Masuk: <strong className="font-mono">{checkInTimeFormatted} WIB</strong></span>
-                    <span>Pulang: <strong className="font-mono">{checkOutTimeFormatted} WIB</strong></span>
-                    <span>Kas Aktual: <strong className="font-mono text-slate-900 font-bold">{formatRupiah(attendance?.actualCash || 0)}</strong></span>
-                    <span>
-                      Selisih:{' '}
-                      <strong className={`font-mono font-bold ${
-                        (attendance?.cashDifference || 0) === 0 ? 'text-emerald-600' : 'text-rose-600'
-                      }`}>
-                        {(attendance?.cashDifference || 0) === 0 ? 'Rp0 (Sesuai)' : formatRupiah(attendance?.cashDifference ?? 0)}
-                      </strong>
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Hari kerja Anda hari ini sudah selesai. Transaksi kasir ditutup. Terima kasih atas kerja keras Anda hari ini!
-                  </p>
+                </div>
+
+                <div className="text-xs text-slate-400 font-medium">
+                  Sesi kasir hari ini telah selesai dan dikunci secara aman di database.
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => {
-                    localStorage.removeItem('pos_attendance_today');
-                    window.location.reload();
-                  }}
-                  className="py-2.5 px-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5"
-                  title="Mulai sesi hari kerja baru"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Mulai Shift Baru</span>
-                </button>
+
+              {/* Grid Ringkasan Setelah Tutup Kas Sesuai Step 13 */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs font-mono">
+                <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">Modal</span>
+                  <div className="font-bold text-white mt-0.5">{formatRupiah(todaySummary?.openingCash ?? attendance?.openingCash ?? 500000)}</div>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">Penjualan</span>
+                  <div className="font-bold text-brand-400 mt-0.5">{formatRupiah(todaySummary?.revenueToday ?? attendance?.stats?.totalRevenue ?? 0)}</div>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">Cash</span>
+                  <div className="font-bold text-emerald-400 mt-0.5">{formatRupiah(todaySummary?.cashSales ?? attendance?.stats?.cashSales ?? 0)}</div>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">Transfer</span>
+                  <div className="font-bold text-sky-400 mt-0.5">{formatRupiah(todaySummary?.transferSales ?? attendance?.stats?.transferSales ?? 0)}</div>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">QRIS</span>
+                  <div className="font-bold text-rose-400 mt-0.5">{formatRupiah(todaySummary?.qrisSales ?? attendance?.stats?.qrisSales ?? 0)}</div>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">Kas Seharusnya</span>
+                  <div className="font-bold text-emerald-300 mt-0.5">{formatRupiah(todaySummary?.expectedCash ?? attendance?.expectedCash ?? 500000)}</div>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">Kas Aktual</span>
+                  <div className="font-bold text-amber-300 mt-0.5">{formatRupiah(todaySummary?.actualCash ?? attendance?.actualCash ?? 0)}</div>
+                </div>
+                <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
+                  <span className="text-[10px] font-sans font-bold text-slate-400 uppercase">Selisih</span>
+                  <div className={`font-bold mt-0.5 ${
+                    (todaySummary?.cashDifference ?? attendance?.cashDifference ?? 0) === 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}>
+                    {(todaySummary?.cashDifference ?? attendance?.cashDifference ?? 0) === 0 
+                      ? 'Rp0' 
+                      : ((todaySummary?.cashDifference ?? attendance?.cashDifference ?? 0) > 0 ? '+' : '') + formatRupiah(todaySummary?.cashDifference ?? attendance?.cashDifference ?? 0)}
+                  </div>
+                </div>
               </div>
+
+              {(todaySummary?.note || attendance?.note) && (
+                <div className="text-xs bg-slate-800/60 border border-slate-700 p-3 rounded-xl text-slate-300">
+                  <span className="text-slate-400 font-bold">Keterangan Kasir: </span>
+                  {todaySummary?.note || attendance?.note}
+                </div>
+              )}
             </div>
           )}
         </div>
