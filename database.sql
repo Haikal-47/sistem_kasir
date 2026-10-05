@@ -85,6 +85,12 @@ CREATE TABLE IF NOT EXISTS cashier_attendances (
   expected_cash NUMERIC(15, 2),
   actual_cash NUMERIC(15, 2),
   cash_difference NUMERIC(15, 2),
+  total_transactions INT DEFAULT 0,
+  total_sales NUMERIC(15, 2) DEFAULT 0,
+  total_cash NUMERIC(15, 2) DEFAULT 0,
+  total_transfer NUMERIC(15, 2) DEFAULT 0,
+  total_qris NUMERIC(15, 2) DEFAULT 0,
+  closed_by VARCHAR(255),
   status VARCHAR(20) NOT NULL DEFAULT 'working',
   note TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -93,6 +99,7 @@ CREATE TABLE IF NOT EXISTS cashier_attendances (
 );
 CREATE INDEX IF NOT EXISTS idx_attendances_date ON cashier_attendances(date);
 CREATE INDEX IF NOT EXISTS idx_attendances_user ON cashier_attendances(user_id);
+CREATE INDEX IF NOT EXISTS idx_attendances_status ON cashier_attendances(status);
 
 -- 7. TABEL TRANSAKSI PENJUALAN (TRANSACTIONS)
 CREATE TABLE IF NOT EXISTS transactions (
@@ -118,20 +125,29 @@ CREATE TABLE IF NOT EXISTS transactions (
   customer_name VARCHAR(255),
   customer_phone VARCHAR(50),
   attendance_id VARCHAR(64),
+  user_id VARCHAR(64),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_attendance ON transactions(attendance_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_invoice ON transactions(invoice_number);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_att_status ON transactions(attendance_id, status);
 CREATE INDEX IF NOT EXISTS idx_transactions_status_date ON transactions(status, date DESC);
-CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
-CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_attendances_status ON cashier_attendances(status);
 
--- 8. TABEL WIRELESS SCANNER (SCANNER SESSIONS & PENDING SCANS)
+-- 8. TABEL IDEMPOTENCY (IDEMPOTENCY KEYS)
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  key VARCHAR(255) PRIMARY KEY,
+  transaction_id VARCHAR(64) NOT NULL,
+  response_body JSONB NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_idempotency_created_at ON idempotency_keys (created_at);
+
+-- 9. SEQUENCE NOMOR INVOICE
+CREATE SEQUENCE IF NOT EXISTS invoice_seq START 1;
+
+-- 10. TABEL WIRELESS SCANNER (SCANNER SESSIONS & PENDING SCANS)
 CREATE TABLE IF NOT EXISTS scanner_sessions (
   session_code VARCHAR(50) PRIMARY KEY,
   last_heartbeat TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

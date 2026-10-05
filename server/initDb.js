@@ -75,6 +75,10 @@ export const initDatabase = async () => {
         transfer_confirmed_at TIMESTAMP WITH TIME ZONE,
         transfer_confirmed_by VARCHAR(255),
         customer_note TEXT,
+        customer_name VARCHAR(255),
+        customer_phone VARCHAR(50),
+        attendance_id VARCHAR(64),
+        user_id VARCHAR(64),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
       ALTER TABLE transactions ADD COLUMN IF NOT EXISTS attendance_id VARCHAR(64);
@@ -112,6 +116,12 @@ export const initDatabase = async () => {
         expected_cash NUMERIC(15, 2),
         actual_cash NUMERIC(15, 2),
         cash_difference NUMERIC(15, 2),
+        total_transactions INT DEFAULT 0,
+        total_sales NUMERIC(15, 2) DEFAULT 0,
+        total_cash NUMERIC(15, 2) DEFAULT 0,
+        total_transfer NUMERIC(15, 2) DEFAULT 0,
+        total_qris NUMERIC(15, 2) DEFAULT 0,
+        closed_by VARCHAR(255),
         status VARCHAR(20) NOT NULL DEFAULT 'working',
         note TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
