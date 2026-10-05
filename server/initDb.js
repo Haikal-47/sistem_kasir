@@ -1,5 +1,5 @@
 import { pool } from './db.js';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 
 export const initDatabase = async () => {
   const client = await pool.connect();

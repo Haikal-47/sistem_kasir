@@ -23,6 +23,7 @@ const pool = new Pool({
   },
   max: 5,
   idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on('error', (err) => {
@@ -400,7 +401,7 @@ router.post('/attendance/check-in', async (req, res) => {
         })
       });
     } catch (txErr) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
       throw txErr;
     } finally {
       client.release();
@@ -535,7 +536,7 @@ router.post('/attendance/check-out', async (req, res) => {
       await client.query('COMMIT');
 
       const updatedRow = updateResult.rows[0];
-      const userResult = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
+      const userResult = await client.query('SELECT name FROM users WHERE id = $1', [userId]);
       updatedRow.cashier_name = userResult.rows[0]?.name || closedByName;
 
       console.log(`✅ Tutup Kas: ${updatedRow.cashier_name} pada ${today} | Expected: ${expectedCash} | Actual: ${actualCashInt} | Selisih: ${cashDifference}`);
@@ -555,7 +556,7 @@ router.post('/attendance/check-out', async (req, res) => {
         attendance: formatAttendanceRow(updatedRow, closingStats)
       });
     } catch (txErr) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
       throw txErr;
     } finally {
       client.release();
@@ -2043,7 +2044,7 @@ router.post('/transactions', requireAuth, async (req, res) => {
     return res.status(201).json(responsePayload);
 
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     console.error('[POST /transactions ERROR]:', error);
     return res.status(500).json({ error: 'Transaksi gagal diproses. Silakan coba kembali.' });
   } finally {
@@ -2205,7 +2206,7 @@ router.patch('/transactions/:id/cancel', requireAdmin, async (req, res) => {
     await client.query('COMMIT');
     res.json({ success: true, id, status: 'BATAL' });
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     console.error('[PATCH /cancel ERROR]:', error);
     res.status(500).json({ error: 'Gagal membatalkan transaksi.' });
   } finally {
@@ -2386,41 +2387,8 @@ router.delete('/payment-methods/:id', requireAdmin, async (req, res) => {
 
 // ── Wireless Scanner Polling Endpoints ─────────────────────────────────────
 
-let isScannerTableReady = false;
-const ensureScannerTables = async () => {
-  if (isScannerTableReady) return;
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS scanner_sessions (
-        session_code VARCHAR(50) PRIMARY KEY,
-        last_heartbeat TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        device_name VARCHAR(100)
-      )
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS pending_scans (
-        id SERIAL PRIMARY KEY,
-        session_code VARCHAR(50) NOT NULL,
-        barcode VARCHAR(100) NOT NULL,
-        scanned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        processed BOOLEAN DEFAULT FALSE,
-        product_name VARCHAR(255),
-        product_price NUMERIC(15, 2),
-        success BOOLEAN
-      )
-    `);
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_pending_scans_session ON pending_scans (session_code, processed)
-    `);
-    isScannerTableReady = true;
-  } catch (e) {
-    console.error('Error ensuring scanner tables:', e);
-  }
-};
-
 router.post('/scan/heartbeat', async (req, res) => {
   try {
-    await ensureScannerTables();
     const { session, deviceName } = req.body;
     if (!session || typeof session !== 'string' || !/^[a-zA-Z0-9_-]{4,64}$/.test(session)) {
       return res.status(400).json({ error: 'Kode sesi scanner tidak valid.' });
@@ -2441,7 +2409,6 @@ router.post('/scan/heartbeat', async (req, res) => {
 
 router.post('/scan', async (req, res) => {
   try {
-    await ensureScannerTables();
     const { session, barcode } = req.body;
     if (!session || typeof session !== 'string' || !/^[a-zA-Z0-9_-]{4,64}$/.test(session)) {
       return res.status(400).json({ error: 'Kode sesi scanner tidak valid.' });
@@ -2475,7 +2442,6 @@ router.post('/scan', async (req, res) => {
 
 router.get('/scan/pending', requireAuth, async (req, res) => {
   try {
-    await ensureScannerTables();
     const { session } = req.query;
     if (!session || typeof session !== 'string' || !/^[a-zA-Z0-9_-]{4,64}$/.test(session)) {
       return res.status(400).json({ error: 'Kode sesi scanner tidak valid.' });
@@ -2565,6 +2531,42 @@ router.get('/scan/:id/ack', async (req, res) => {
     });
   } catch (error) {
     sendSafeError(res, 500, 'Gagal memeriksa konfirmasi pemindaian.', error);
+  }
+});
+
+// ── Maintenance & Lifecycle Operations ──────────────────────────────────────
+
+export const cleanupExpiredIdempotencyKeys = async (retentionDays = 7, batchLimit = 500) => {
+  const safeDays = Math.max(1, Math.min(365, parseInt(retentionDays, 10) || 7));
+  const safeLimit = Math.max(1, Math.min(5000, parseInt(batchLimit, 10) || 500));
+
+  const result = await pool.query(
+    `DELETE FROM idempotency_keys
+     WHERE key IN (
+       SELECT key FROM idempotency_keys
+       WHERE created_at < NOW() - ($1 || ' days')::INTERVAL
+       ORDER BY created_at ASC
+       LIMIT $2
+     )
+     RETURNING key`,
+    [safeDays, safeLimit]
+  );
+  return result.rowCount || 0;
+};
+
+// POST /api/admin/maintenance/cleanup-idempotency (Admin Only)
+router.post('/admin/maintenance/cleanup-idempotency', requireAdmin, async (req, res) => {
+  try {
+    const { retentionDays = 7, limit = 500 } = req.body || {};
+    const deletedCount = await cleanupExpiredIdempotencyKeys(retentionDays, limit);
+    res.json({
+      success: true,
+      message: `Berhasil membersihkan ${deletedCount} kunci idempotensi yang telah kedaluwarsa.`,
+      deletedCount,
+      retentionDays: Math.max(1, Math.min(365, parseInt(retentionDays, 10) || 7))
+    });
+  } catch (error) {
+    sendSafeError(res, 500, 'Gagal membersihkan kunci idempotensi kedaluwarsa.', error);
   }
 });
 

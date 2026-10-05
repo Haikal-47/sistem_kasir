@@ -197,7 +197,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     });
   } catch (error) {
     console.error('Error in /api/auth/login:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Terjadi kesalahan pada server.' });
   }
 });
 
@@ -327,8 +327,7 @@ app.get('/api/attendance/today', async (req, res) => {
       attendance: formatAttendanceRow(row, stats)
     });
   } catch (error) {
-    console.error('Error in GET /api/attendance/today:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat status absensi hari ini.', error);
   }
 });
 
@@ -406,14 +405,13 @@ app.post('/api/attendance/check-in', async (req, res) => {
         })
       });
     } catch (txErr) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
       throw txErr;
     } finally {
       client.release();
     }
   } catch (error) {
-    console.error('Error in POST /api/attendance/check-in:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal melakukan absensi masuk.', error);
   }
 });
 
@@ -547,7 +545,7 @@ app.post('/api/attendance/check-out', async (req, res) => {
       await client.query('COMMIT');
 
       const updatedRow = updateResult.rows[0];
-      const userResult = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
+      const userResult = await client.query('SELECT name FROM users WHERE id = $1', [userId]);
       updatedRow.cashier_name = userResult.rows[0]?.name || closedByName;
 
       console.log(`✅ Tutup Kas: ${updatedRow.cashier_name} pada ${today} | Expected: ${expectedCash} | Actual: ${actualCashInt} | Selisih: ${cashDifference}`);
@@ -567,14 +565,13 @@ app.post('/api/attendance/check-out', async (req, res) => {
         attendance: formatAttendanceRow(updatedRow, closingStats)
       });
     } catch (txErr) {
-      await client.query('ROLLBACK');
+      await client.query('ROLLBACK').catch(() => {});
       throw txErr;
     } finally {
       client.release();
     }
   } catch (error) {
-    console.error('Error in POST /api/attendance/check-out:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal melakukan absensi keluar.', error);
   }
 });
 
@@ -679,8 +676,7 @@ app.get('/api/attendance/summary-today', async (req, res) => {
       stats
     });
   } catch (error) {
-    console.error('Error in GET /api/attendance/summary-today:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat ringkasan kasir hari ini.', error);
   }
 });
 
@@ -751,8 +747,7 @@ app.get('/api/attendance/laporan', requireAdmin, async (req, res) => {
 
     res.json({ attendances: attendanceList, total: attendanceList.length });
   } catch (error) {
-    console.error('Error in GET /api/attendance/laporan:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat laporan absensi.', error);
   }
 });
 
@@ -937,8 +932,7 @@ app.get('/api/reports/summary', requireAdmin, async (req, res) => {
       cashiers
     });
   } catch (error) {
-    console.error('Error in GET /api/reports/summary:', error);
-    res.status(500).json({ error: error.message || 'Gagal memuat ringkasan laporan.' });
+    sendSafeError(res, 500, 'Gagal memuat ringkasan laporan operasional.', error);
   }
 });
 
@@ -990,8 +984,7 @@ app.get('/api/reports/top-products', requireAdmin, async (req, res) => {
       products
     });
   } catch (error) {
-    console.error('Error in GET /api/reports/top-products:', error);
-    res.status(500).json({ error: error.message || 'Gagal memuat produk terlaris.' });
+    sendSafeError(res, 500, 'Gagal memuat produk terlaris.', error);
   }
 });
 
@@ -1194,7 +1187,7 @@ app.get('/api/settings', async (req, res) => {
       receiptFooter: r.receipt_footer
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat pengaturan toko.', error);
   }
 });
 
@@ -1233,7 +1226,7 @@ app.put('/api/settings', requireAdmin, async (req, res) => {
       receiptFooter: r.receipt_footer
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menyimpan pengaturan toko.', error);
   }
 });
 
@@ -1261,8 +1254,7 @@ app.get('/api/products', async (req, res) => {
     }));
     res.json(products);
   } catch (error) {
-    console.error('Error fetching products:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat katalog produk.', error);
   }
 });
 
@@ -2077,7 +2069,7 @@ app.post('/api/transactions', requireAuth, async (req, res) => {
     return res.status(201).json(responsePayload);
 
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     console.error('[POST /transactions ERROR]:', error);
     return res.status(500).json({ error: 'Transaksi gagal diproses. Silakan coba kembali.' });
   } finally {
@@ -2241,7 +2233,7 @@ app.patch('/api/transactions/:id/cancel', requireAdmin, async (req, res) => {
     await client.query('COMMIT');
     res.json({ success: true, id, status: 'BATAL' });
   } catch (error) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     console.error('[PATCH /cancel ERROR]:', error);
     res.status(500).json({ error: 'Gagal membatalkan transaksi.' });
   } finally {
@@ -2280,7 +2272,7 @@ app.get('/api/cashier', async (req, res) => {
       outletPhone: r.outlet_phone,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat profil kasir.', error);
   }
 });
 
@@ -2319,7 +2311,7 @@ app.put('/api/cashier', requireAdmin, async (req, res) => {
       outletPhone: r.outlet_phone,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memperbarui profil kasir.', error);
   }
 });
 
@@ -2344,8 +2336,7 @@ app.get('/api/payment-methods', async (req, res) => {
     }));
     res.json(methods);
   } catch (error) {
-    console.error('Error fetching payment methods:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat metode pembayaran.', error);
   }
 });
 
@@ -2375,8 +2366,7 @@ app.post('/api/payment-methods', requireAdmin, async (req, res) => {
       description: r.description || '',
     });
   } catch (error) {
-    console.error('Error creating payment method:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menambahkan metode pembayaran.', error);
   }
 });
 
@@ -2420,8 +2410,7 @@ app.put('/api/payment-methods/:id', requireAdmin, async (req, res) => {
       description: r.description || '',
     });
   } catch (error) {
-    console.error('Error updating payment method:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memperbarui metode pembayaran.', error);
   }
 });
 
@@ -2432,8 +2421,7 @@ app.delete('/api/payment-methods/:id', requireAdmin, async (req, res) => {
     await pool.query('DELETE FROM payment_methods WHERE id = $1', [id]);
     res.json({ success: true, id });
   } catch (error) {
-    console.error('Error deleting payment method:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menghapus metode pembayaran.', error);
   }
 });
 
@@ -2591,6 +2579,42 @@ app.get('/api/scan/:id/ack', async (req, res) => {
     });
   } catch (error) {
     sendSafeError(res, 500, 'Gagal memeriksa konfirmasi pemindaian.', error);
+  }
+});
+
+// ── Maintenance & Lifecycle Operations ──────────────────────────────────────
+
+export const cleanupExpiredIdempotencyKeys = async (retentionDays = 7, batchLimit = 500) => {
+  const safeDays = Math.max(1, Math.min(365, parseInt(retentionDays, 10) || 7));
+  const safeLimit = Math.max(1, Math.min(5000, parseInt(batchLimit, 10) || 500));
+
+  const result = await pool.query(
+    `DELETE FROM idempotency_keys
+     WHERE key IN (
+       SELECT key FROM idempotency_keys
+       WHERE created_at < NOW() - ($1 || ' days')::INTERVAL
+       ORDER BY created_at ASC
+       LIMIT $2
+     )
+     RETURNING key`,
+    [safeDays, safeLimit]
+  );
+  return result.rowCount || 0;
+};
+
+// POST /api/admin/maintenance/cleanup-idempotency (Admin Only)
+app.post('/api/admin/maintenance/cleanup-idempotency', requireAdmin, async (req, res) => {
+  try {
+    const { retentionDays = 7, limit = 500 } = req.body || {};
+    const deletedCount = await cleanupExpiredIdempotencyKeys(retentionDays, limit);
+    res.json({
+      success: true,
+      message: `Berhasil membersihkan ${deletedCount} kunci idempotensi yang telah kedaluwarsa.`,
+      deletedCount,
+      retentionDays: Math.max(1, Math.min(365, parseInt(retentionDays, 10) || 7))
+    });
+  } catch (error) {
+    sendSafeError(res, 500, 'Gagal membersihkan kunci idempotensi kedaluwarsa.', error);
   }
 });
 
