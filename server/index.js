@@ -725,6 +725,245 @@ app.get('/api/attendance/laporan', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── REPORTS & DASHBOARD (ADMIN ONLY) ──────────────────────────────────────
+
+// Helper to parse report period and date ranges (WIB / Asia/Jakarta)
+const parseReportPeriod = (period, startDate, endDate) => {
+  const getJakartaToday = () => {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+  };
+  const todayStr = getJakartaToday();
+  const [y, m, d] = todayStr.split('-').map(Number);
+
+  let start = startDate ? String(startDate).trim() : null;
+  let end = endDate ? String(endDate).trim() : null;
+
+  const p = (period || '').toUpperCase();
+  if (p === 'TODAY') {
+    start = todayStr;
+    end = todayStr;
+  } else if (p === 'YESTERDAY') {
+    const yesterday = new Date(Date.UTC(y, m - 1, d - 1));
+    start = yesterday.toISOString().slice(0, 10);
+    end = start;
+  } else if (p === 'THIS_WEEK') {
+    const current = new Date(Date.UTC(y, m - 1, d));
+    const day = current.getUTCDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    const monday = new Date(Date.UTC(y, m - 1, d + diff));
+    start = monday.toISOString().slice(0, 10);
+    end = todayStr;
+  } else if (p === 'THIS_MONTH') {
+    start = `${y}-${String(m).padStart(2, '0')}-01`;
+    end = todayStr;
+  } else if (!start && !end) {
+    start = `${y}-${String(m).padStart(2, '0')}-01`;
+    end = todayStr;
+  } else {
+    if (!start) start = end;
+    if (!end) end = start;
+  }
+
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(start) || !dateRegex.test(end)) {
+    return { error: 'Format tanggal tidak valid. Gunakan format YYYY-MM-DD.' };
+  }
+
+  if (start > end) {
+    const tmp = start;
+    start = end;
+    end = tmp;
+  }
+
+  return {
+    period: p || 'CUSTOM',
+    startDate: start,
+    endDate: end,
+    startIso: `${start}T00:00:00+07:00`,
+    endIso: `${end}T23:59:59.999+07:00`
+  };
+};
+
+// GET /api/reports/summary — Backend-driven sales, payments, & cashiers aggregation
+app.get('/api/reports/summary', requireAdmin, async (req, res) => {
+  try {
+    const { period, startDate, endDate } = req.query;
+    const range = parseReportPeriod(period, startDate, endDate);
+    if (range.error) {
+      return res.status(400).json({ error: range.error });
+    }
+
+    const [salesResult, itemsResult, paymentResult, cashierResult] = await Promise.all([
+      // 1. Sales aggregate (only status = 'LUNAS' counted in sales)
+      pool.query(`
+        SELECT 
+          COUNT(*) FILTER (WHERE status='LUNAS') as total_completed,
+          COUNT(*) FILTER (WHERE status='BATAL') as total_cancelled,
+          COUNT(*) FILTER (WHERE status='MENUNGGU_KONFIRMASI') as total_pending,
+          COALESCE(SUM(total) FILTER (WHERE status='LUNAS'), 0) as total_sales,
+          COALESCE(SUM(subtotal) FILTER (WHERE status='LUNAS'), 0) as total_subtotal,
+          COALESCE(SUM(discount) FILTER (WHERE status='LUNAS'), 0) as total_discount,
+          COALESCE(SUM(tax) FILTER (WHERE status='LUNAS'), 0) as total_tax,
+          COALESCE(SUM(total) FILTER (WHERE status='LUNAS' AND UPPER(payment_method)='TUNAI'), 0) as cash_sales,
+          COALESCE(SUM(total) FILTER (WHERE status='LUNAS' AND UPPER(payment_method) LIKE '%QRIS%'), 0) as qris_sales,
+          COALESCE(SUM(total) FILTER (WHERE status='LUNAS' AND UPPER(payment_method) NOT IN ('TUNAI') AND UPPER(payment_method) NOT LIKE '%QRIS%'), 0) as transfer_sales
+        FROM transactions
+        WHERE date >= $1 AND date <= $2
+      `, [range.startIso, range.endIso]),
+
+      // 2. Total items sold (JSONB array unnest)
+      pool.query(`
+        SELECT COALESCE(SUM((item->>'quantity')::int), 0) as total_items_sold
+        FROM transactions t,
+        jsonb_array_elements(CASE WHEN jsonb_typeof(t.items) = 'array' THEN t.items ELSE '[]'::jsonb END) as item
+        WHERE t.status = 'LUNAS'
+          AND t.date >= $1 AND t.date <= $2
+      `, [range.startIso, range.endIso]),
+
+      // 3. Payment methods breakdown
+      pool.query(`
+        SELECT 
+          payment_method as name,
+          COUNT(*)::int as count,
+          COALESCE(SUM(total), 0)::numeric as total
+        FROM transactions
+        WHERE status = 'LUNAS'
+          AND date >= $1 AND date <= $2
+        GROUP BY payment_method
+        ORDER BY total DESC
+      `, [range.startIso, range.endIso]),
+
+      // 4. Cashiers breakdown
+      pool.query(`
+        SELECT 
+          cashier_name as name,
+          COUNT(*)::int as count,
+          COALESCE(SUM(total), 0)::numeric as total
+        FROM transactions
+        WHERE status = 'LUNAS'
+          AND date >= $1 AND date <= $2
+        GROUP BY cashier_name
+        ORDER BY total DESC
+      `, [range.startIso, range.endIso]),
+    ]);
+
+    const salesRow = salesResult.rows[0] || {};
+    const totalRevenue = Math.round(Number(salesRow.total_sales || 0));
+    const totalCompleted = parseInt(salesRow.total_completed || '0', 10);
+    const totalCancelled = parseInt(salesRow.total_cancelled || '0', 10);
+    const totalPending = parseInt(salesRow.total_pending || '0', 10);
+    const cashSales = Math.round(Number(salesRow.cash_sales || 0));
+    const qrisSales = Math.round(Number(salesRow.qris_sales || 0));
+    const transferSales = Math.round(Number(salesRow.transfer_sales || 0));
+    const totalSubtotal = Math.round(Number(salesRow.total_subtotal || 0));
+    const totalDiscount = Math.round(Number(salesRow.total_discount || 0));
+    const totalTax = Math.round(Number(salesRow.total_tax || 0));
+
+    const totalItemsSold = parseInt(itemsResult.rows[0]?.total_items_sold || '0', 10);
+    const averageTransactionValue = totalCompleted > 0 ? Math.round(totalRevenue / totalCompleted) : 0;
+
+    const paymentMethods = paymentResult.rows.map(r => {
+      const tot = Math.round(Number(r.total));
+      return {
+        name: r.name || 'Lainnya',
+        count: parseInt(r.count, 10),
+        total: tot,
+        percentage: totalRevenue > 0 ? Number(((tot / totalRevenue) * 100).toFixed(1)) : 0
+      };
+    });
+
+    const cashiers = cashierResult.rows.map(r => {
+      const tot = Math.round(Number(r.total));
+      return {
+        name: r.name || 'Kasir',
+        count: parseInt(r.count, 10),
+        total: tot,
+        percentage: totalRevenue > 0 ? Number(((tot / totalRevenue) * 100).toFixed(1)) : 0
+      };
+    });
+
+    res.json({
+      period: {
+        period: range.period,
+        startDate: range.startDate,
+        endDate: range.endDate
+      },
+      summary: {
+        totalRevenue,
+        totalTransactionCount: totalCompleted,
+        totalCancelledCount: totalCancelled,
+        totalPendingCount: totalPending,
+        totalItemsSold,
+        averageTransactionValue,
+        cashSales,
+        transferSales,
+        qrisSales,
+        totalSubtotal,
+        totalDiscount,
+        totalTax
+      },
+      paymentMethods,
+      cashiers
+    });
+  } catch (error) {
+    console.error('Error in GET /api/reports/summary:', error);
+    res.status(500).json({ error: error.message || 'Gagal memuat ringkasan laporan.' });
+  }
+});
+
+// GET /api/reports/top-products — Top bestselling products by quantity or revenue
+app.get('/api/reports/top-products', requireAdmin, async (req, res) => {
+  try {
+    const { period, startDate, endDate, limit, sortBy } = req.query;
+    const range = parseReportPeriod(period, startDate, endDate);
+    if (range.error) {
+      return res.status(400).json({ error: range.error });
+    }
+
+    let lim = parseInt(limit, 10);
+    if (isNaN(lim) || lim < 1) lim = 10;
+    if (lim > 50) lim = 50;
+
+    const sortOrder = sortBy === 'revenue' ? 'total_revenue DESC, total_qty DESC' : 'total_qty DESC, total_revenue DESC';
+
+    const result = await pool.query(`
+      SELECT 
+        item->>'productId' as product_id,
+        item->>'name' as product_name,
+        COALESCE(item->>'brand', 'ARFA FASHION') as brand,
+        SUM((item->>'quantity')::int) as total_qty,
+        SUM((item->>'subtotal')::numeric) as total_revenue
+      FROM transactions t,
+      jsonb_array_elements(CASE WHEN jsonb_typeof(t.items) = 'array' THEN t.items ELSE '[]'::jsonb END) as item
+      WHERE t.status = 'LUNAS'
+        AND t.date >= $1 AND t.date <= $2
+      GROUP BY item->>'productId', item->>'name', COALESCE(item->>'brand', 'ARFA FASHION')
+      ORDER BY ${sortOrder}
+      LIMIT $3
+    `, [range.startIso, range.endIso, lim]);
+
+    const products = result.rows.map(r => ({
+      productId: r.product_id,
+      name: r.product_name,
+      brand: r.brand,
+      quantity: parseInt(r.total_qty, 10),
+      revenue: Math.round(Number(r.total_revenue))
+    }));
+
+    res.json({
+      period: {
+        period: range.period,
+        startDate: range.startDate,
+        endDate: range.endDate
+      },
+      products
+    });
+  } catch (error) {
+    console.error('Error in GET /api/reports/top-products:', error);
+    res.status(500).json({ error: error.message || 'Gagal memuat produk terlaris.' });
+  }
+});
+
 // ─── USER MANAGEMENT (ADMIN ONLY) ──────────────────────────────────────────
 
 // GET /api/users
@@ -1115,7 +1354,7 @@ app.get('/api/transactions', requireAuth, async (req, res) => {
     }
 
     // Optional Date filtering
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, status, paymentMethod, invoice, search } = req.query;
     if (startDate) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDate).trim())) {
         return res.status(400).json({ error: 'Format startDate tidak valid. Gunakan format YYYY-MM-DD.' });
@@ -1131,6 +1370,37 @@ app.get('/api/transactions', requireAuth, async (req, res) => {
       }
       conditions.push(`date <= $${pIdx}`);
       params.push(`${String(endDate).trim()}T23:59:59.999+07:00`);
+      pIdx++;
+    }
+
+    // Optional Status filtering
+    if (status && String(status).trim().toUpperCase() !== 'ALL' && String(status).trim().toUpperCase() !== 'SEMUA') {
+      conditions.push(`status = $${pIdx}`);
+      params.push(String(status).trim().toUpperCase());
+      pIdx++;
+    }
+
+    // Optional Payment Method filtering
+    if (paymentMethod && String(paymentMethod).trim().toUpperCase() !== 'ALL' && String(paymentMethod).trim().toUpperCase() !== 'SEMUA') {
+      const pmUpper = String(paymentMethod).trim().toUpperCase();
+      if (pmUpper === 'TUNAI' || pmUpper === 'CASH') {
+        conditions.push(`UPPER(payment_method) = 'TUNAI'`);
+      } else if (pmUpper === 'QRIS') {
+        conditions.push(`UPPER(payment_method) LIKE '%QRIS%'`);
+      } else if (pmUpper === 'TRANSFER') {
+        conditions.push(`(UPPER(payment_method) NOT IN ('TUNAI') AND UPPER(payment_method) NOT LIKE '%QRIS%')`);
+      } else {
+        conditions.push(`UPPER(payment_method) = $${pIdx}`);
+        params.push(pmUpper);
+        pIdx++;
+      }
+    }
+
+    // Optional Invoice/Customer/Search filter
+    const searchQuery = String(search || invoice || '').trim();
+    if (searchQuery) {
+      conditions.push(`(invoice_number ILIKE $${pIdx} OR customer_name ILIKE $${pIdx})`);
+      params.push(`%${searchQuery}%`);
       pIdx++;
     }
 

@@ -86,6 +86,7 @@ export const initDatabase = async () => {
       CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
       CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
       CREATE INDEX IF NOT EXISTS idx_transactions_att_status ON transactions(attendance_id, status);
+      CREATE INDEX IF NOT EXISTS idx_transactions_status_date ON transactions(status, date DESC);
 
       -- Idempotency Keys Table
       CREATE TABLE IF NOT EXISTS idempotency_keys (

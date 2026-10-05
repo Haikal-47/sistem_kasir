@@ -30,7 +30,7 @@ export const LaporanPage: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'penjualan' | 'absensi'>('penjualan');
 
-  // ── Penjualan filter state
+  // ── Penjualan backend-driven state
   const [periodFilter, setPeriodFilter] = useState<'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM'>('THIS_MONTH');
   const [customStartDate, setCustomStartDate] = useState<string>(() => {
     const d = new Date();
@@ -40,6 +40,100 @@ export const LaporanPage: React.FC = () => {
   const [customEndDate, setCustomEndDate] = useState<string>(() => {
     return new Date().toISOString().slice(0, 10);
   });
+
+  const [reportSummary, setReportSummary] = useState<{
+    totalRevenue: number;
+    totalTransactionCount: number;
+    totalCancelledCount: number;
+    totalPendingCount: number;
+    totalItemsSold: number;
+    averageTransactionValue: number;
+    cashSales: number;
+    transferSales: number;
+    qrisSales: number;
+    totalSubtotal: number;
+    totalDiscount: number;
+    totalTax: number;
+  } | null>(null);
+
+  const [paymentMethodBreakdown, setPaymentMethodBreakdown] = useState<Array<{
+    name: string;
+    count: number;
+    total: number;
+    percentage: number;
+  }>>([]);
+
+  const [cashierBreakdown, setCashierBreakdown] = useState<Array<{
+    name: string;
+    count: number;
+    total: number;
+    percentage: number;
+  }>>([]);
+
+  const [topProducts, setTopProducts] = useState<Array<{
+    productId: string;
+    name: string;
+    brand: string;
+    quantity: number;
+    revenue: number;
+  }>>([]);
+
+  const [isLoadingReport, setIsLoadingReport] = useState<boolean>(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [isExportingSales, setIsExportingSales] = useState<boolean>(false);
+
+  const fetchSalesReport = async () => {
+    setIsLoadingReport(true);
+    setReportError(null);
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+      const params = new URLSearchParams();
+      params.set('period', periodFilter);
+      if (periodFilter === 'CUSTOM') {
+        params.set('startDate', customStartDate);
+        params.set('endDate', customEndDate);
+      }
+
+      const [summaryRes, topRes] = await Promise.all([
+        fetch(`/api/reports/summary?${params.toString()}`, { headers }),
+        fetch(`/api/reports/top-products?${params.toString()}&limit=10`, { headers })
+      ]);
+
+      if (!summaryRes.ok) {
+        const d = await summaryRes.json().catch(() => ({}));
+        setReportError(d.error || 'Gagal memuat ringkasan laporan.');
+        return;
+      }
+
+      const summaryData = await summaryRes.json();
+      setReportSummary(summaryData.summary || null);
+      setPaymentMethodBreakdown(summaryData.paymentMethods || []);
+      setCashierBreakdown(summaryData.cashiers || []);
+
+      if (topRes.ok) {
+        const topData = await topRes.json();
+        setTopProducts(topData.products || []);
+      }
+    } catch (err: any) {
+      setReportError('Gagal terhubung ke server. Periksa koneksi internet.');
+    } finally {
+      setIsLoadingReport(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'penjualan') {
+      fetchSalesReport();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, periodFilter]);
+
+  const totalRevenue = reportSummary?.totalRevenue ?? 0;
+  const totalTransactionCount = reportSummary?.totalTransactionCount ?? 0;
+  const totalItemsSold = reportSummary?.totalItemsSold ?? 0;
+  const averageTransactionValue = reportSummary?.averageTransactionValue ?? 0;
 
   // ── Absensi filter state
   const [absensiStart, setAbsensiStart] = useState<string>(() => {
@@ -80,94 +174,45 @@ export const LaporanPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  // ─── Penjualan computations ─────────────────────────────────────────────
-  const filteredTransactions = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+  const handleExportCSV = async () => {
+    setIsExportingSales(true);
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const qParams = new URLSearchParams();
+      if (periodFilter === 'CUSTOM') {
+        qParams.set('startDate', customStartDate);
+        qParams.set('endDate', customEndDate);
+      }
+      qParams.set('limit', '100');
 
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-    startOfWeek.setHours(0, 0, 0, 0);
+      const res = await fetch(`/api/transactions?${qParams.toString()}`, { headers });
+      const json = await res.json().catch(() => ({ data: [] }));
+      const txRows = Array.isArray(json) ? json : (json.data || []);
 
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    return transactions.filter(t => {
-      if (t.status === 'BATAL') return false;
-      const tDate = new Date(t.date);
-      const tDateStr = t.date.slice(0, 10);
-
-      if (periodFilter === 'TODAY') return tDateStr === todayStr;
-      if (periodFilter === 'YESTERDAY') return tDateStr === yesterdayStr;
-      if (periodFilter === 'THIS_WEEK') return tDate >= startOfWeek;
-      if (periodFilter === 'THIS_MONTH') return tDate >= startOfMonth;
-      if (periodFilter === 'CUSTOM') return tDateStr >= customStartDate && tDateStr <= customEndDate;
-      return true;
-    });
-  }, [transactions, periodFilter, customStartDate, customEndDate]);
-
-  const totalRevenue = useMemo(() => filteredTransactions.reduce((s, t) => s + t.total, 0), [filteredTransactions]);
-  const totalTransactionCount = filteredTransactions.length;
-  const totalItemsSold = useMemo(() => filteredTransactions.reduce((s, t) => s + t.items.reduce((is, it) => is + it.quantity, 0), 0), [filteredTransactions]);
-  const averageTransactionValue = totalTransactionCount > 0 ? totalRevenue / totalTransactionCount : 0;
-
-  const paymentMethodBreakdown = useMemo(() => {
-    const map: Record<string, { count: number; total: number }> = {};
-    filteredTransactions.forEach(t => {
-      const method = t.paymentMethod || 'Lainnya';
-      if (!map[method]) map[method] = { count: 0, total: 0 };
-      map[method].count += 1;
-      map[method].total += t.total;
-    });
-    return Object.entries(map).map(([name, stat]) => ({
-      name, count: stat.count, total: stat.total,
-      percentage: totalRevenue > 0 ? (stat.total / totalRevenue) * 100 : 0
-    })).sort((a, b) => b.total - a.total);
-  }, [filteredTransactions, totalRevenue]);
-
-  const cashierBreakdown = useMemo(() => {
-    const map: Record<string, { count: number; total: number }> = {};
-    filteredTransactions.forEach(t => {
-      const c = t.cashierName || 'Kasir';
-      if (!map[c]) map[c] = { count: 0, total: 0 };
-      map[c].count += 1;
-      map[c].total += t.total;
-    });
-    return Object.entries(map).map(([name, stat]) => ({
-      name, count: stat.count, total: stat.total,
-      percentage: totalRevenue > 0 ? (stat.total / totalRevenue) * 100 : 0
-    })).sort((a, b) => b.total - a.total);
-  }, [filteredTransactions, totalRevenue]);
-
-  const topProducts = useMemo(() => {
-    const map: Record<string, { name: string; brand: string; quantity: number; revenue: number }> = {};
-    filteredTransactions.forEach(t => {
-      t.items.forEach(it => {
-        const key = it.productId || it.name;
-        if (!map[key]) map[key] = { name: it.name, brand: it.brand || 'ARFA FASHION', quantity: 0, revenue: 0 };
-        map[key].quantity += it.quantity;
-        map[key].revenue += it.subtotal;
-      });
-    });
-    return Object.values(map).sort((a, b) => b.quantity - a.quantity).slice(0, 10);
-  }, [filteredTransactions]);
-
-  const handleExportCSV = () => {
-    const headers = ['No. Invoice', 'Tanggal & Waktu', 'Kasir', 'Metode Bayar', 'Total (Rp)', 'Status'];
-    const rows = filteredTransactions.map(t => [
-      t.invoiceNumber, formatDateTime(t.date), t.cashierName, t.paymentMethod, t.total, t.status
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Laporan_Penjualan_ARFA_${periodFilter}_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const csvHeaders = ['No. Invoice', 'Tanggal & Waktu', 'Kasir', 'Metode Bayar', 'Total (Rp)', 'Status'];
+      const rows = txRows.map((t: any) => [
+        t.invoiceNumber || t.invoice_number,
+        formatDateTime(t.date),
+        t.cashierName || t.cashier_name,
+        t.paymentMethod || t.payment_method,
+        t.total,
+        t.status
+      ]);
+      const csvContent = 'data:text/csv;charset=utf-8,' + [csvHeaders.join(','), ...rows.map((e: any[]) => e.join(','))].join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `Laporan_Penjualan_ARFA_${periodFilter}_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Failed to export CSV:', err);
+    } finally {
+      setIsExportingSales(false);
+    }
   };
 
   const handleExportAbsensiCSV = () => {
@@ -270,10 +315,11 @@ export const LaporanPage: React.FC = () => {
 
             <button
               onClick={handleExportCSV}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 flex items-center gap-1.5 shadow-2xs transition-colors ml-auto"
+              disabled={isExportingSales}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50 flex items-center gap-1.5 shadow-2xs transition-colors ml-auto disabled:opacity-50"
             >
               <Download className="w-3.5 h-3.5 text-slate-500" />
-              <span className="hidden sm:inline">Export CSV</span>
+              <span className="hidden sm:inline">{isExportingSales ? 'Mengekspor...' : 'Export CSV'}</span>
             </button>
           </div>
 
@@ -289,11 +335,42 @@ export const LaporanPage: React.FC = () => {
                 <span className="font-semibold text-slate-600">Sampai:</span>
                 <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} className="px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono font-medium outline-none" />
               </div>
+              <button
+                onClick={fetchSalesReport}
+                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors shadow-xs"
+              >
+                Tampilkan
+              </button>
+            </div>
+          )}
+
+          {/* Error Banner */}
+          {reportError && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-2xl text-xs flex items-center justify-between gap-2.5 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{reportError}</span>
+              </div>
+              <button
+                onClick={fetchSalesReport}
+                className="px-3 py-1 bg-rose-600 text-white font-bold rounded-lg text-[11px] hover:bg-rose-700"
+              >
+                Coba Lagi
+              </button>
+            </div>
+          )}
+
+          {/* Loading Indicator */}
+          {isLoadingReport && (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
             </div>
           )}
 
           {/* Summary Stat Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {!isLoadingReport && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Omset</span>
@@ -421,6 +498,8 @@ export const LaporanPage: React.FC = () => {
               </div>
             </div>
           </div>
+            </>
+          )}
         </>
       )}
 

@@ -90,7 +90,7 @@ interface POSContextType {
   // Transactions
   transactions: Transaction[];
   transactionsPagination: PaginationInfo;
-  fetchTransactions: (page?: number, limit?: number, startDate?: string, endDate?: string) => Promise<void>;
+  fetchTransactions: (page?: number, limit?: number, startDate?: string, endDate?: string, status?: string, paymentMethod?: string, search?: string) => Promise<void>;
   createCashTransaction: (cashGiven: number, methodName?: string, customerName?: string, customerPhone?: string) => Promise<{ success: boolean; transaction?: Transaction; error?: string }>;
   createTransferTransaction: (methodName: string, transferBank: string, proofUrl: string, isConfirmedDirectly: boolean, customerName?: string, customerPhone?: string) => Promise<{ success: boolean; transaction?: Transaction; error?: string }>;
   confirmTransferPayment: (transactionId: string) => void;
@@ -1343,7 +1343,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const fetchTransactions = useCallback(async (page = 1, limit = 20, startDate?: string, endDate?: string) => {
+  const fetchTransactions = useCallback(async (page = 1, limit = 20, startDate?: string, endDate?: string, status?: string, paymentMethod?: string, search?: string) => {
     const token = authToken || sessionStorage.getItem('pos_auth_token') || '';
     try {
       const params = new URLSearchParams({
@@ -1352,6 +1352,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       if (startDate) params.set('startDate', startDate);
       if (endDate) params.set('endDate', endDate);
+      if (status && status !== 'SEMUA') params.set('status', status);
+      if (paymentMethod && paymentMethod !== 'SEMUA') params.set('paymentMethod', paymentMethod);
+      if (search) params.set('search', search);
 
       const res = await fetch(`/api/transactions?${params.toString()}`, {
         headers: {

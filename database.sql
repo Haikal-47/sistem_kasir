@@ -126,6 +126,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_att_status ON transactions(attendance_id, status);
+CREATE INDEX IF NOT EXISTS idx_transactions_status_date ON transactions(status, date DESC);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_attendances_status ON cashier_attendances(status);
