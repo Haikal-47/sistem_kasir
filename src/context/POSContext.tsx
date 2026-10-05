@@ -32,6 +32,7 @@ interface POSContextType {
 
   // Auth & Session
   authToken: string;
+  authHeaders: () => Record<string, string>;
   currentUser: UserAccount | null;
   login: (username: string, pass: string, portal: 'admin' | 'kasir') => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
@@ -214,9 +215,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (parsed.outletName === 'MINIMARKET KASIR PRO') {
           parsed.outletName = 'ARFA FASHION';
         }
-        if (!parsed.role) {
-          parsed.role = parsed.name?.toLowerCase().includes('admin') ? 'super_admin' : 'kasir';
+        // Role otorisasi hanya berasal dari sesi terverifikasi backend, tidak dipercaya dari localStorage
+        const savedUser = sessionStorage.getItem('pos_current_user');
+        let verifiedRole: UserRole = 'kasir';
+        if (savedUser) {
+          try {
+            verifiedRole = JSON.parse(savedUser).role || 'kasir';
+          } catch {}
         }
+        parsed.role = verifiedRole;
         if (parsed.name === 'Budi Pratama') {
           parsed.name = 'Gusti';
         }
@@ -226,7 +233,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return INITIAL_CASHIER;
   });
 
-  const isSuperAdmin = (currentUser?.role === 'super_admin') || (cashier.role === 'super_admin');
+  const isSuperAdmin = Boolean(authToken && currentUser?.role === 'super_admin');
 
   // ── Cashier Attendance State (Prompt Rules 4, 5, 6, 7, 8, 12, 13, 20) ──
   const [attendance, setAttendance] = useState<CashierAttendance | null>(() => {
@@ -425,31 +432,11 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return { success: true };
     } catch (err: unknown) {
-      // Local fallback for offline mode
-      console.warn('Backend login unreachable, evaluating offline fallback:', err);
-      if (portal === 'admin') {
-        if (username.toLowerCase() === 'admin' && pass === 'admin123') {
-          const user: UserAccount = { id: 'USR-ADM-01', username: 'admin', name: 'Super Admin', role: 'super_admin', isActive: true };
-          setCurrentUser(user);
-          sessionStorage.setItem('pos_current_user', JSON.stringify(user));
-          sessionStorage.setItem('pos_logged_in', 'true');
-          sessionStorage.setItem('pos_role', 'super_admin');
-          sessionStorage.setItem('pos_login_name', user.name);
-          return { success: true };
-        }
-        return { success: false, error: 'Akses ditolak: Username atau kata sandi admin salah.' };
-      } else {
-        if (username.toLowerCase() === 'gusti' && (pass === '123456' || pass === 'gusti123')) {
-          const user: UserAccount = { id: 'USR-KAS-01', username: 'gusti', name: 'Gusti', role: 'kasir', isActive: true };
-          setCurrentUser(user);
-          sessionStorage.setItem('pos_current_user', JSON.stringify(user));
-          sessionStorage.setItem('pos_logged_in', 'true');
-          sessionStorage.setItem('pos_role', 'kasir');
-          sessionStorage.setItem('pos_login_name', user.name);
-          return { success: true };
-        }
-        return { success: false, error: 'Username atau kata sandi kasir salah.' };
-      }
+      console.error('Backend login error:', err);
+      return {
+        success: false,
+        error: 'Tidak dapat terhubung ke server. Pastikan server aktif dan periksa koneksi internet.'
+      };
     }
   };
 
@@ -464,7 +451,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const switchRole = (newRole: UserRole) => {
-    if (newRole === 'super_admin' && cashier.role !== 'super_admin') {
+    // Hanya izinkan switch ke super_admin jika sesi pengguna backend memang super_admin
+    if (newRole === 'super_admin' && currentUser?.role !== 'super_admin') {
       console.warn('Unauthorized role switch attempt to super_admin rejected.');
       return;
     }
@@ -1464,6 +1452,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTab,
         isDbConnected,
         authToken,
+        authHeaders,
         currentUser,
         login,
         logout,

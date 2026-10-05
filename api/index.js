@@ -112,6 +112,14 @@ const loginRateLimiter = rateLimit({
   skipSuccessfulRequests: true,
 });
 
+const sendSafeError = (res, statusCode, publicMessage, internalError = null) => {
+  if (internalError) {
+    const errorMsg = internalError.message || String(internalError);
+    console.error(`[Server Error ${statusCode}]:`, errorMsg);
+  }
+  return res.status(statusCode).json({ error: publicMessage });
+};
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -125,7 +133,8 @@ router.get('/health', async (req, res) => {
     const result = await pool.query('SELECT NOW() as current_time');
     res.json({ status: 'ok', database: 'connected', time: result.rows[0].current_time });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
+    console.error('[Health Check DB Error]:', error.message);
+    res.status(500).json({ status: 'error', message: 'Database connection failed' });
   }
 });
 
@@ -315,8 +324,7 @@ router.get('/attendance/today', async (req, res) => {
       attendance: formatAttendanceRow(row, stats)
     });
   } catch (error) {
-    console.error('Error in GET /api/attendance/today:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat status absensi hari ini.', error);
   }
 });
 
@@ -398,8 +406,7 @@ router.post('/attendance/check-in', async (req, res) => {
       client.release();
     }
   } catch (error) {
-    console.error('Error in POST /api/attendance/check-in:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal melakukan absensi masuk.', error);
   }
 });
 
@@ -554,8 +561,7 @@ router.post('/attendance/check-out', async (req, res) => {
       client.release();
     }
   } catch (error) {
-    console.error('Error in POST /api/attendance/check-out:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal melakukan absensi keluar.', error);
   }
 });
 
@@ -660,8 +666,7 @@ router.get('/attendance/summary-today', async (req, res) => {
       stats
     });
   } catch (error) {
-    console.error('Error in GET /api/attendance/summary-today:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat ringkasan kasir hari ini.', error);
   }
 });
 
@@ -732,8 +737,7 @@ router.get('/attendance/laporan', requireAdmin, async (req, res) => {
 
     res.json({ attendances: attendanceList, total: attendanceList.length });
   } catch (error) {
-    console.error('Error in GET /api/attendance/laporan:', error);
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat laporan absensi.', error);
   }
 });
 
@@ -918,8 +922,7 @@ router.get('/reports/summary', requireAdmin, async (req, res) => {
       cashiers
     });
   } catch (error) {
-    console.error('Error in GET /api/reports/summary:', error);
-    res.status(500).json({ error: error.message || 'Gagal memuat ringkasan laporan.' });
+    sendSafeError(res, 500, 'Gagal memuat ringkasan laporan operasional.', error);
   }
 });
 
@@ -971,8 +974,7 @@ router.get('/reports/top-products', requireAdmin, async (req, res) => {
       products
     });
   } catch (error) {
-    console.error('Error in GET /api/reports/top-products:', error);
-    res.status(500).json({ error: error.message || 'Gagal memuat produk terlaris.' });
+    sendSafeError(res, 500, 'Gagal memuat produk terlaris.', error);
   }
 });
 
@@ -992,7 +994,7 @@ router.get('/users', requireAdmin, async (req, res) => {
       createdAt: r.created_at
     })));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat data pengguna.', error);
   }
 });
 
@@ -1002,9 +1004,17 @@ router.post('/users', requireAdmin, async (req, res) => {
     if (!username || !password || !name) {
       return res.status(400).json({ error: 'Username, kata sandi, dan nama wajib diisi.' });
     }
-    if (password.length < 8) {
+    if (typeof password !== 'string' || password.length < 8) {
       return res.status(400).json({ error: 'Kata sandi minimal 8 karakter.' });
     }
+    // Larang pembuatan akun dengan role super_admin melalui API
+    if (role === 'super_admin') {
+      return res.status(403).json({ error: 'Tidak diizinkan membuat user dengan role super_admin.' });
+    }
+    if (role && role !== 'kasir') {
+      return res.status(400).json({ error: 'Role tidak valid.' });
+    }
+
     const cleanUser = username.trim().toLowerCase();
     const existing = await pool.query('SELECT id FROM users WHERE LOWER(username) = $1', [cleanUser]);
     if (existing.rows.length > 0) {
@@ -1012,7 +1022,7 @@ router.post('/users', requireAdmin, async (req, res) => {
     }
 
     const id = `USR-${Date.now().toString().slice(-4)}`;
-    const roleVal = role === 'super_admin' ? 'super_admin' : 'kasir';
+    const roleVal = 'kasir';
     const hashedPassword = await bcrypt.hash(password, 12);
     const result = await pool.query(
       `INSERT INTO users (id, username, password, name, role, is_active)
@@ -1031,7 +1041,7 @@ router.post('/users', requireAdmin, async (req, res) => {
       createdAt: r.created_at
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menambahkan pengguna baru.', error);
   }
 });
 
@@ -1040,13 +1050,49 @@ router.put('/users/:id', requireAdmin, async (req, res) => {
     const { id } = req.params;
     const { username, password, name, role, isActive } = req.body;
 
-    if (password && password.length < 8) {
-      return res.status(400).json({ error: 'Kata sandi baru minimal 8 karakter.' });
+    // Larang pemberian hak super_admin melalui endpoint ini
+    if (role === 'super_admin') {
+      return res.status(403).json({ error: 'Tidak diizinkan menetapkan role super_admin.' });
+    }
+    if (role && role !== 'kasir') {
+      return res.status(400).json({ error: 'Role tidak valid.' });
     }
 
+    // Cegah perubahan role akun sendiri (self-escalation / de-escalation anomaly)
+    if (role && req.user && req.user.id === id && role !== req.user.role) {
+      return res.status(400).json({ error: 'Tidak dapat mengubah role akun sendiri.' });
+    }
+
+    // Validasi target user
+    const targetUserRes = await pool.query('SELECT id, username, role FROM users WHERE id = $1', [id]);
+    if (targetUserRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User tidak ditemukan' });
+    }
+    const targetUser = targetUserRes.rows[0];
+    // Jangan izinkan mengubah role super_admin yang ada
+    if (targetUser.role === 'super_admin' && role && role !== 'super_admin') {
+      return res.status(403).json({ error: 'Role super_admin sistem tidak dapat diubah.' });
+    }
+
+    // Validasi password jika dikirimkan
     let hashedPassword = null;
-    if (password) {
+    if (password !== undefined && password !== null && password !== '') {
+      if (typeof password !== 'string' || password.length < 8) {
+        return res.status(400).json({ error: 'Kata sandi baru minimal 8 karakter.' });
+      }
       hashedPassword = await bcrypt.hash(password, 12);
+    }
+
+    // Validasi username unik jika diubah
+    let cleanUser = null;
+    if (username && typeof username === 'string') {
+      cleanUser = username.trim().toLowerCase();
+      if (cleanUser !== targetUser.username) {
+        const dupCheck = await pool.query('SELECT id FROM users WHERE LOWER(username) = $1 AND id != $2', [cleanUser, id]);
+        if (dupCheck.rows.length > 0) {
+          return res.status(400).json({ error: `Username "${cleanUser}" sudah digunakan.` });
+        }
+      }
     }
 
     const result = await pool.query(
@@ -1059,12 +1105,8 @@ router.put('/users/:id', requireAdmin, async (req, res) => {
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $6
        RETURNING id, username, name, role, is_active, created_at`,
-      [username ? username.trim().toLowerCase() : null, hashedPassword, name ? name.trim() : null, role || null, typeof isActive === 'boolean' ? isActive : null, id]
+      [cleanUser, hashedPassword, name && typeof name === 'string' ? name.trim() : null, role || null, typeof isActive === 'boolean' ? isActive : null, id]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User tidak ditemukan' });
-    }
 
     const r = result.rows[0];
     res.json({
@@ -1076,7 +1118,7 @@ router.put('/users/:id', requireAdmin, async (req, res) => {
       createdAt: r.created_at
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memperbarui data pengguna.', error);
   }
 });
 
@@ -1088,14 +1130,20 @@ router.delete('/users/:id', requireAdmin, async (req, res) => {
     }
     const adminCount = await pool.query("SELECT COUNT(*) FROM users WHERE role = 'super_admin'");
     const target = await pool.query("SELECT role FROM users WHERE id = $1", [id]);
-    if (target.rows.length > 0 && target.rows[0].role === 'super_admin' && parseInt(adminCount.rows[0].count, 10) <= 1) {
+    if (target.rows.length === 0) {
+      return res.status(404).json({ error: 'User tidak ditemukan' });
+    }
+    if (target.rows[0].role === 'super_admin' && parseInt(adminCount.rows[0].count, 10) <= 1) {
       return res.status(400).json({ error: 'Tidak dapat menghapus satu-satunya akun Super Admin.' });
+    }
+    if (target.rows[0].role === 'super_admin') {
+      return res.status(403).json({ error: 'Akun super_admin tidak dapat dihapus.' });
     }
 
     await pool.query('DELETE FROM users WHERE id = $1', [id]);
     res.json({ success: true, id });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menghapus pengguna.', error);
   }
 });
 
@@ -1124,7 +1172,7 @@ router.get('/settings', async (req, res) => {
       receiptFooter: r.receipt_footer
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat pengaturan toko.', error);
   }
 });
 
@@ -1162,7 +1210,7 @@ router.put('/settings', requireAdmin, async (req, res) => {
       receiptFooter: r.receipt_footer
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menyimpan pengaturan toko.', error);
   }
 });
 
@@ -1189,7 +1237,7 @@ router.get('/products', async (req, res) => {
     }));
     res.json(products);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat katalog produk.', error);
   }
 });
 
@@ -1256,7 +1304,7 @@ router.post('/products', requireAdmin, async (req, res) => {
       variants: r.variants,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menambahkan produk.', error);
   }
 });
 
@@ -1314,7 +1362,7 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
       variants: typeof r.variants === 'string' ? JSON.parse(r.variants) : r.variants,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memperbarui produk.', error);
   }
 });
 
@@ -1357,7 +1405,7 @@ router.patch('/products/:id/stock', requireAdmin, async (req, res) => {
       variants: typeof r.variants === 'string' ? JSON.parse(r.variants) : r.variants
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memperbarui stok produk.', error);
   }
 });
 
@@ -1367,7 +1415,7 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
     await pool.query('DELETE FROM products WHERE id = $1', [id]);
     res.json({ success: true, id });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menghapus produk.', error);
   }
 });
 
@@ -1895,26 +1943,53 @@ router.post('/transactions', requireAuth, async (req, res) => {
 });
 
 router.patch('/transactions/:id/confirm', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const { id } = req.params;
     const { confirmedBy } = req.body;
-    const result = await pool.query(
+
+    const txRes = await client.query(`SELECT id, status, payment_method FROM transactions WHERE id = $1 FOR UPDATE`, [id]);
+    if (txRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Transaksi tidak ditemukan.' });
+    }
+
+    const currentTx = txRes.rows[0];
+    if (currentTx.status === 'BATAL') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Transaksi yang sudah BATAL tidak dapat dikonfirmasi menjadi LUNAS.' });
+    }
+
+    if (currentTx.status === 'LUNAS') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Transaksi ini sudah berstatus LUNAS.' });
+    }
+
+    const updateRes = await client.query(
       `UPDATE transactions
        SET status = 'LUNAS',
            transfer_proof_verified = TRUE,
            transfer_confirmed_at = CURRENT_TIMESTAMP,
            transfer_confirmed_by = $1
-       WHERE id = $2
+       WHERE id = $2 AND status != 'BATAL' AND status != 'LUNAS'
        RETURNING *`,
       [confirmedBy || req.user.name || 'Admin', id]
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Transaksi tidak ditemukan.' });
+
+    if (updateRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Status transaksi tidak valid untuk konfirmasi.' });
     }
-    res.json({ success: true, transaction: result.rows[0] });
+
+    await client.query('COMMIT');
+    res.json({ success: true, transaction: updateRes.rows[0] });
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('[PATCH /confirm ERROR]:', error);
-    res.status(500).json({ error: 'Gagal mengonfirmasi transaksi.' });
+    sendSafeError(res, 500, 'Gagal mengonfirmasi transaksi.', error);
+  } finally {
+    client.release();
   }
 });
 
@@ -2053,7 +2128,7 @@ router.get('/cashier', async (req, res) => {
       outletPhone: r.outlet_phone,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat profil kasir.', error);
   }
 });
 
@@ -2090,7 +2165,7 @@ router.put('/cashier', requireAdmin, async (req, res) => {
       outletPhone: r.outlet_phone,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memperbarui profil kasir.', error);
   }
 });
 
@@ -2114,7 +2189,7 @@ router.get('/payment-methods', async (req, res) => {
     }));
     res.json(methods);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat metode pembayaran.', error);
   }
 });
 
@@ -2143,7 +2218,7 @@ router.post('/payment-methods', requireAdmin, async (req, res) => {
       description: r.description || '',
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menambahkan metode pembayaran.', error);
   }
 });
 
@@ -2186,7 +2261,7 @@ router.put('/payment-methods/:id', requireAdmin, async (req, res) => {
       description: r.description || '',
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memperbarui metode pembayaran.', error);
   }
 });
 
@@ -2196,7 +2271,7 @@ router.delete('/payment-methods/:id', requireAdmin, async (req, res) => {
     await pool.query('DELETE FROM payment_methods WHERE id = $1', [id]);
     res.json({ success: true, id });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menghapus metode pembayaran.', error);
   }
 });
 
@@ -2238,17 +2313,20 @@ router.post('/scan/heartbeat', async (req, res) => {
   try {
     await ensureScannerTables();
     const { session, deviceName } = req.body;
-    if (!session) return res.status(400).json({ error: 'Session code required' });
+    if (!session || typeof session !== 'string' || !/^[a-zA-Z0-9_-]{4,64}$/.test(session)) {
+      return res.status(400).json({ error: 'Kode sesi scanner tidak valid.' });
+    }
+    const cleanDeviceName = typeof deviceName === 'string' ? deviceName.slice(0, 100) : 'HP Kasir';
     await pool.query(
       `INSERT INTO scanner_sessions (session_code, last_heartbeat, device_name)
        VALUES ($1, CURRENT_TIMESTAMP, $2)
        ON CONFLICT (session_code)
        DO UPDATE SET last_heartbeat = CURRENT_TIMESTAMP, device_name = EXCLUDED.device_name`,
-      [session, deviceName || 'HP Kasir']
+      [session, cleanDeviceName]
     );
     res.json({ ok: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memproses detak jantung scanner.', error);
   }
 });
 
@@ -2256,9 +2334,22 @@ router.post('/scan', async (req, res) => {
   try {
     await ensureScannerTables();
     const { session, barcode } = req.body;
-    if (!session || !barcode) {
-      return res.status(400).json({ error: 'Session code and barcode are required' });
+    if (!session || typeof session !== 'string' || !/^[a-zA-Z0-9_-]{4,64}$/.test(session)) {
+      return res.status(400).json({ error: 'Kode sesi scanner tidak valid.' });
     }
+    if (!barcode || typeof barcode !== 'string' || barcode.trim().length === 0 || barcode.length > 100) {
+      return res.status(400).json({ error: 'Barcode tidak valid.' });
+    }
+
+    // Pastikan session scanner sudah didaftarkan oleh kasir berwenang
+    const sessionCheck = await pool.query(
+      `SELECT session_code FROM scanner_sessions WHERE session_code = $1`,
+      [session]
+    );
+    if (sessionCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Sesi scanner tidak valid atau belum diaktifkan oleh kasir.' });
+    }
+
     pool.query(`DELETE FROM pending_scans WHERE scanned_at < CURRENT_TIMESTAMP - INTERVAL '10 minutes'`).catch(() => {});
     
     const result = await pool.query(
@@ -2269,15 +2360,25 @@ router.post('/scan', async (req, res) => {
     );
     res.status(201).json({ success: true, scanId: result.rows[0].id });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal mencatat pemindaian barcode.', error);
   }
 });
 
-router.get('/scan/pending', async (req, res) => {
+router.get('/scan/pending', requireAuth, async (req, res) => {
   try {
     await ensureScannerTables();
     const { session } = req.query;
-    if (!session) return res.status(400).json({ error: 'Session code is required' });
+    if (!session || typeof session !== 'string' || !/^[a-zA-Z0-9_-]{4,64}$/.test(session)) {
+      return res.status(400).json({ error: 'Kode sesi scanner tidak valid.' });
+    }
+
+    // Registrasi/aktifkan session oleh kasir yang telah login
+    await pool.query(
+      `INSERT INTO scanner_sessions (session_code, last_heartbeat, device_name)
+       VALUES ($1, CURRENT_TIMESTAMP, $2)
+       ON CONFLICT (session_code) DO NOTHING`,
+      [session, 'POS Kasir Desktop']
+    );
 
     const sessionRes = await pool.query(
       `SELECT (last_heartbeat > CURRENT_TIMESTAMP - INTERVAL '45 seconds') AS is_active
@@ -2300,13 +2401,17 @@ router.get('/scan/pending', async (req, res) => {
       isScannerConnected,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memuat antrean pemindaian.', error);
   }
 });
 
 const markScanProcessedHandler = async (req, res) => {
   try {
     const { id } = req.params;
+    const scanId = parseInt(id, 10);
+    if (isNaN(scanId)) {
+      return res.status(400).json({ error: 'ID pemindaian tidak valid.' });
+    }
     const { success, productName, productPrice } = req.body;
     await pool.query(
       `UPDATE pending_scans
@@ -2315,24 +2420,28 @@ const markScanProcessedHandler = async (req, res) => {
            product_name = $2,
            product_price = $3
        WHERE id = $4`,
-      [success === true, productName || null, productPrice ? parseFloat(productPrice) : null, id]
+      [success === true, productName ? String(productName).slice(0, 255) : null, productPrice ? parseFloat(productPrice) : null, scanId]
     );
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal menandai status pemindaian.', error);
   }
 };
-router.post('/scan/:id/processed', markScanProcessedHandler);
-router.patch('/scan/:id/processed', markScanProcessedHandler);
+router.post('/scan/:id/processed', requireAuth, markScanProcessedHandler);
+router.patch('/scan/:id/processed', requireAuth, markScanProcessedHandler);
 
 router.get('/scan/:id/ack', async (req, res) => {
   try {
     const { id } = req.params;
+    const scanId = parseInt(id, 10);
+    if (isNaN(scanId)) {
+      return res.status(400).json({ error: 'ID tidak valid.' });
+    }
     const result = await pool.query(
       `SELECT id, processed, success, product_name, product_price
        FROM pending_scans
        WHERE id = $1`,
-      [id]
+      [scanId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Scan not found' });
@@ -2346,11 +2455,10 @@ router.get('/scan/:id/ack', async (req, res) => {
       productPrice: row.product_price ? parseFloat(row.product_price) : null,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendSafeError(res, 500, 'Gagal memeriksa konfirmasi pemindaian.', error);
   }
 });
 
 app.use('/api', router);
-app.use('/', router);
 
 export default app;

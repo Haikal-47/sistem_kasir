@@ -9,11 +9,8 @@ interface LoginPageProps {
   onLoginSuccess: () => void;
 }
 
-// Default PIN — stored as base64 in localStorage key 'pos_pin'
-const DEFAULT_PIN_B64 = btoa('123456');
-
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const { cashier, switchRole, updateCashier, login: apiLogin } = usePOS();
+  const { cashier, updateCashier, login: apiLogin } = usePOS();
 
   const [selectedRole, setSelectedRole] = useState<UserRole>(() => {
     return cashier.role || 'kasir';
@@ -44,13 +41,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     pinRef.current?.focus();
   };
 
-  const getStoredPin = (): string => {
-    if (selectedRole === 'super_admin') {
-      return localStorage.getItem('pos_admin_pin') || localStorage.getItem('pos_pin') || DEFAULT_PIN_B64;
-    }
-    return localStorage.getItem('pos_kasir_pin') || localStorage.getItem('pos_pin') || DEFAULT_PIN_B64;
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
@@ -67,60 +57,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
     setError('');
 
-    // Coba login via backend API dulu untuk mendapat JWT token
-    // Gunakan apiLogin dari POSContext agar authToken state ter-update dengan benar
+    // Autentikasi ketat via backend API
     const defaultUsername = selectedRole === 'super_admin' ? 'admin' : name.trim().toLowerCase().replace(/\s+/g, '');
     try {
       const result = await apiLogin(defaultUsername, pin.trim(), selectedRole === 'super_admin' ? 'admin' : 'kasir');
       if (result.success) {
-        // apiLogin sudah set authToken, currentUser, sessionStorage semua
-        switchRole(selectedRole);
-        updateCashier({ name: name.trim() });
-        // Simpan PIN lokal juga sebagai fallback offline
-        const key = selectedRole === 'super_admin' ? 'pos_admin_pin' : 'pos_kasir_pin';
-        localStorage.setItem(key, btoa(pin.trim()));
-        onLoginSuccess();
-        return;
-      }
-      // Jika error bukan network error — credential salah, jangan fallback ke PIN lokal
-      if (result.error && !result.error.toLowerCase().includes('fetch') && !result.error.toLowerCase().includes('network') && !result.error.toLowerCase().includes('failed to fetch')) {
-        setIsShaking(true);
-        setError(result.error || 'Username atau PIN salah. Coba lagi.');
-        setPin('');
-        setIsLoading(false);
-        pinRef.current?.focus();
-        setTimeout(() => setIsShaking(false), 600);
-        return;
-      }
-    } catch {
-      // Network error / API tidak tersedia — fallback ke PIN lokal
-      console.warn('API login gagal, mencoba PIN lokal...');
-    }
-
-
-    // Fallback: verifikasi PIN lokal (untuk mode offline / development)
-    setTimeout(() => {
-      const storedPin = getStoredPin();
-      const inputPinB64 = btoa(pin);
-
-      if (inputPinB64 === storedPin) {
-        switchRole(selectedRole);
         if (name.trim()) {
           updateCashier({ name: name.trim() });
         }
-        sessionStorage.setItem('pos_logged_in', 'true');
-        sessionStorage.setItem('pos_login_name', name.trim());
-        sessionStorage.setItem('pos_role', selectedRole);
-        onLoginSuccess();
-      } else {
-        setIsShaking(true);
-        setError('Kata sandi / PIN salah. Coba lagi. (Default: 123456)');
-        setPin('');
         setIsLoading(false);
-        pinRef.current?.focus();
-        setTimeout(() => setIsShaking(false), 600);
+        onLoginSuccess();
+        return;
       }
-    }, 200);
+      setIsShaking(true);
+      setError(result.error || 'Username atau kata sandi / PIN salah.');
+      setPin('');
+      setIsLoading(false);
+      pinRef.current?.focus();
+      setTimeout(() => setIsShaking(false), 600);
+    } catch {
+      setIsShaking(true);
+      setError('Gagal menghubungi server. Pastikan server aktif dan periksa koneksi internet.');
+      setPin('');
+      setIsLoading(false);
+      pinRef.current?.focus();
+      setTimeout(() => setIsShaking(false), 600);
+    }
   };
 
   const handlePinKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

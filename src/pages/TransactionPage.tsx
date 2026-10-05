@@ -61,7 +61,8 @@ export const TransactionPage: React.FC = () => {
     setIsCheckoutOpen,
     setIsPaymentMethodsOpen,
     findProductByBarcode,
-    isDbConnected
+    isDbConnected,
+    authHeaders
   } = usePOS();
 
   const [barcodeInput, setBarcodeInput] = useState<string>('');
@@ -253,7 +254,9 @@ export const TransactionPage: React.FC = () => {
       if (isPollingBusyRef.current) return;
       isPollingBusyRef.current = true;
       try {
-        const res = await fetch(`/api/scan/pending?session=${sessionCode}`);
+        const res = await fetch(`/api/scan/pending?session=${sessionCode}`, {
+          headers: authHeaders(),
+        });
         if (!res.ok) return;
         const data = await res.json();
         const scans: { id: number; barcode: string }[] = Array.isArray(data)
@@ -272,7 +275,10 @@ export const TransactionPage: React.FC = () => {
           try {
             await fetch(`/api/scan/${scan.id}/processed`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                ...authHeaders(),
+                'Content-Type': 'application/json',
+              },
               body: JSON.stringify({
                 success: result.success,
                 productName: result.productName || null,
