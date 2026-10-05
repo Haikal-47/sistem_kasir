@@ -1193,16 +1193,50 @@ router.get('/products', async (req, res) => {
   }
 });
 
+// ── Variant Helpers ────────────────────────────────────────────────────────
+export const validateProductVariantStock = (prod) => {
+  const vars = Array.isArray(prod.variants) ? prod.variants : [];
+  if (vars.length > 0) {
+    const sum = vars.reduce((acc, v) => acc + (Number(v.stock) || 0), 0);
+    if (sum !== Number(prod.stock)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+export const hasDuplicateVariants = (variants) => {
+  if (!Array.isArray(variants) || variants.length === 0) return false;
+  const seen = new Set();
+  for (const v of variants) {
+    const color = (v.color || '').trim().toLowerCase();
+    const size = (v.size || '').trim().toLowerCase();
+    const key = `${color}__${size}`;
+    if (seen.has(key)) {
+      return true;
+    }
+    seen.add(key);
+  }
+  return false;
+};
+
 router.post('/products', requireAdmin, async (req, res) => {
   try {
     const { name, brand, category, price, costPrice, stock, barcode, unit, colors, sizes, variants } = req.body;
+    if (variants && Array.isArray(variants) && hasDuplicateVariants(variants)) {
+      return res.status(400).json({ error: 'Kombinasi warna dan ukuran variant sudah ada.' });
+    }
+    const finalStock = (variants && Array.isArray(variants) && variants.length > 0)
+      ? variants.reduce((s, v) => s + (Number(v.stock) || 0), 0)
+      : (stock || 0);
+
     const id = `PRD-${Date.now().toString().slice(-4)}`;
     const result = await pool.query(
       `INSERT INTO products (id, name, brand, category, price, cost_price, stock, barcode, unit, colors, sizes, variants)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [
-        id, name, brand, category, price, costPrice || 0, stock || 0, barcode, unit || 'Pcs',
+        id, name, brand, category, price, costPrice || 0, finalStock, barcode, unit || 'Pcs',
         JSON.stringify(colors || []), JSON.stringify(sizes || []), JSON.stringify(variants || [])
       ]
     );
@@ -1230,6 +1264,13 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, brand, category, price, costPrice, stock, barcode, unit, colors, sizes, variants } = req.body;
+    if (variants && Array.isArray(variants) && hasDuplicateVariants(variants)) {
+      return res.status(400).json({ error: 'Kombinasi warna dan ukuran variant sudah ada.' });
+    }
+    const finalStock = (variants && Array.isArray(variants) && variants.length > 0)
+      ? variants.reduce((s, v) => s + (Number(v.stock) || 0), 0)
+      : stock;
+
     const result = await pool.query(
       `UPDATE products
        SET name = COALESCE($1, name),
@@ -1247,7 +1288,7 @@ router.put('/products/:id', requireAdmin, async (req, res) => {
        WHERE id = $12
        RETURNING *`,
       [
-        name, brand, category, price, costPrice, stock, barcode, unit,
+        name, brand, category, price, costPrice, finalStock, barcode, unit,
         colors ? JSON.stringify(colors) : null,
         sizes ? JSON.stringify(sizes) : null,
         variants ? JSON.stringify(variants) : null,
@@ -1606,6 +1647,17 @@ router.post('/transactions', requireAuth, async (req, res) => {
     }
 
     // ── 6. Process Stock, Recalculate Subtotal (Backend Source of Truth) ──
+    // Verify product variant stock consistency before transaction
+    for (const prod of productMap.values()) {
+      if (!validateProductVariantStock(prod)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: `Stok variant produk "${prod.name}" tidak konsisten.`,
+          code: 'STOCK_INCONSISTENCY'
+        });
+      }
+    }
+
     let calculatedSubtotal = 0;
     const verifiedItems = [];
 
@@ -1618,36 +1670,59 @@ router.post('/transactions', requireAuth, async (req, res) => {
       const vars = Array.isArray(prod.variants) ? prod.variants : [];
       const hasVariantRequested = Boolean(item.variantId || item.selectedColor || item.selectedSize);
 
-      if (vars.length > 0 && hasVariantRequested) {
-        const variantIndex = vars.findIndex(v => {
-          if (item.variantId && v.id === item.variantId) return true;
-          const matchColor = !item.selectedColor || (v.color && v.color.toLowerCase() === item.selectedColor.trim().toLowerCase());
-          const matchSize = !item.selectedSize || (v.size && v.size.toLowerCase() === item.selectedSize.trim().toLowerCase());
-          return matchColor && matchSize;
-        });
-
-        if (variantIndex !== -1) {
-          const matchedVar = vars[variantIndex];
-          if (matchedVar.stock < item.quantity) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({
-              error: `Stok tidak mencukupi untuk "${prod.name} (${matchedVar.color || ''} ${matchedVar.size || ''})". Stok tersedia: ${matchedVar.stock}, diminta: ${item.quantity}.`,
-              code: 'INSUFFICIENT_STOCK'
-            });
-          }
-          matchedVar.stock -= item.quantity;
-          prod.stock = vars.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
-        } else {
-          // If variant requested but not found in variant list, check main stock
-          if (prod.stock < item.quantity) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({
-              error: `Stok tidak mencukupi untuk produk "${prod.name}". Stok tersedia: ${prod.stock}, diminta: ${item.quantity}.`,
-              code: 'INSUFFICIENT_STOCK'
-            });
-          }
-          prod.stock -= item.quantity;
+      if (hasVariantRequested) {
+        if (vars.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: `Variant produk "${prod.name}" tidak ditemukan.`,
+            code: 'VARIANT_NOT_FOUND'
+          });
         }
+
+        let variantIndex = -1;
+        if (item.variantId) {
+          // Priority 1: Match by exact variantId
+          variantIndex = vars.findIndex(v => v.id === item.variantId);
+        } else {
+          // Priority 2: Match by color + size
+          variantIndex = vars.findIndex(v => {
+            const matchColor = !item.selectedColor || (v.color && v.color.toLowerCase() === item.selectedColor.trim().toLowerCase());
+            const matchSize = !item.selectedSize || (v.size && v.size.toLowerCase() === item.selectedSize.trim().toLowerCase());
+            return matchColor && matchSize;
+          });
+        }
+
+        if (variantIndex === -1) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: `Variant produk "${prod.name}" tidak ditemukan.`,
+            code: 'VARIANT_NOT_FOUND'
+          });
+        }
+
+        const matchedVar = vars[variantIndex];
+        if (matchedVar.stock < item.quantity) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: `Stok tidak mencukupi untuk "${prod.name} (${matchedVar.color || ''} ${matchedVar.size || ''})". Stok tersedia: ${matchedVar.stock}, diminta: ${item.quantity}.`,
+            code: 'INSUFFICIENT_STOCK'
+          });
+        }
+
+        matchedVar.stock -= item.quantity;
+        prod.stock = vars.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+
+        verifiedItems.push({
+          productId: prod.id,
+          name: prod.name,
+          brand: prod.brand || '',
+          price: itemPrice,
+          quantity: item.quantity,
+          subtotal: itemSubtotal,
+          selectedColor: item.selectedColor ? String(item.selectedColor).trim() : (matchedVar.color || undefined),
+          selectedSize: item.selectedSize ? String(item.selectedSize).trim() : (matchedVar.size || undefined),
+          variantId: matchedVar.id,
+        });
       } else {
         // Plain product without variants
         if (prod.stock < item.quantity) {
@@ -1658,19 +1733,16 @@ router.post('/transactions', requireAuth, async (req, res) => {
           });
         }
         prod.stock -= item.quantity;
-      }
 
-      verifiedItems.push({
-        productId: prod.id,
-        name: prod.name,
-        brand: prod.brand || '',
-        price: itemPrice,
-        quantity: item.quantity,
-        subtotal: itemSubtotal,
-        selectedColor: item.selectedColor ? String(item.selectedColor).trim() : undefined,
-        selectedSize: item.selectedSize ? String(item.selectedSize).trim() : undefined,
-        variantId: item.variantId || undefined,
-      });
+        verifiedItems.push({
+          productId: prod.id,
+          name: prod.name,
+          brand: prod.brand || '',
+          price: itemPrice,
+          quantity: item.quantity,
+          subtotal: itemSubtotal,
+        });
+      }
     }
 
     // ── 7. Calculate Discount, Tax, and Final Total ──
@@ -1865,32 +1937,84 @@ router.patch('/transactions/:id/cancel', requireAdmin, async (req, res) => {
     }
     const items = typeof tx.items === 'string' ? JSON.parse(tx.items) : tx.items;
 
+    // Lock all involved products in deterministic sorted order to prevent deadlocks
+    const uniqueProdIds = [...new Set(items.map(it => it.productId.trim()))].sort();
+    const prodLockRes = await client.query(
+      `SELECT id, name, stock, variants FROM products WHERE id = ANY($1) FOR UPDATE`,
+      [uniqueProdIds]
+    );
+
+    const prodMap = new Map();
+    for (const r of prodLockRes.rows) {
+      prodMap.set(r.id, {
+        id: r.id,
+        name: r.name,
+        stock: parseInt(r.stock, 10),
+        variants: typeof r.variants === 'string' ? JSON.parse(r.variants) : (r.variants || [])
+      });
+    }
+
     for (const item of items) {
-      const prodRes = await client.query('SELECT stock, variants FROM products WHERE id = $1 FOR UPDATE', [item.productId]);
-      if (prodRes.rows.length > 0) {
-        const prod = prodRes.rows[0];
-        let vars = typeof prod.variants === 'string' ? JSON.parse(prod.variants) : (prod.variants || []);
-        if (Array.isArray(vars) && vars.length > 0 && (item.selectedColor || item.selectedSize)) {
-          vars = vars.map(v => {
-            const matchColor = !item.selectedColor || v.color.toLowerCase() === item.selectedColor.toLowerCase();
-            const matchSize = !item.selectedSize || v.size.toLowerCase() === item.selectedSize.toLowerCase();
-            if (matchColor && matchSize) {
-              return { ...v, stock: v.stock + item.quantity };
-            }
-            return v;
-          });
-          const newTotalStock = vars.reduce((sum, v) => sum + v.stock, 0);
-          await client.query(
-            `UPDATE products SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
-            [newTotalStock, JSON.stringify(vars), item.productId]
-          );
-        } else {
-          await client.query(
-            `UPDATE products SET stock = stock + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-            [item.quantity, item.productId]
-          );
-        }
+      const prod = prodMap.get(item.productId.trim());
+      if (!prod) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: `Produk ID "${item.productId}" untuk pengembalian stok tidak ditemukan.` });
       }
+
+      const vars = Array.isArray(prod.variants) ? prod.variants : [];
+      const hasVariantInfo = Boolean(item.variantId || item.selectedColor || item.selectedSize);
+
+      if (hasVariantInfo) {
+        if (vars.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: 'Variant untuk pengembalian stok tidak ditemukan.',
+            code: 'VARIANT_NOT_FOUND_CANCEL'
+          });
+        }
+
+        let variantIndex = -1;
+        if (item.variantId) {
+          // Primary: search strictly by variantId
+          variantIndex = vars.findIndex(v => v.id === item.variantId);
+          if (variantIndex === -1) {
+            // DO NOT fallback to color/size if variantId was specified but not found
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+              error: 'Variant untuk pengembalian stok tidak ditemukan.',
+              code: 'VARIANT_NOT_FOUND_CANCEL'
+            });
+          }
+        } else {
+          // Backward compatibility fallback for legacy transactions: search by color + size
+          variantIndex = vars.findIndex(v => {
+            const matchColor = !item.selectedColor || (v.color && v.color.toLowerCase() === item.selectedColor.trim().toLowerCase());
+            const matchSize = !item.selectedSize || (v.size && v.size.toLowerCase() === item.selectedSize.trim().toLowerCase());
+            return matchColor && matchSize;
+          });
+          if (variantIndex === -1) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+              error: 'Variant untuk pengembalian stok tidak ditemukan.',
+              code: 'VARIANT_NOT_FOUND_CANCEL'
+            });
+          }
+        }
+
+        vars[variantIndex].stock = (Number(vars[variantIndex].stock) || 0) + item.quantity;
+        prod.stock = vars.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+      } else {
+        // Plain product without variants
+        prod.stock += item.quantity;
+      }
+    }
+
+    // Persist all restored products in DB
+    for (const prod of prodMap.values()) {
+      await client.query(
+        `UPDATE products SET stock = $1, variants = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+        [prod.stock, JSON.stringify(prod.variants), prod.id]
+      );
     }
 
     await client.query(`UPDATE transactions SET status = 'BATAL' WHERE id = $1`, [id]);
