@@ -82,6 +82,10 @@ export const initDatabase = async () => {
       ALTER TABLE transactions ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(50);
       ALTER TABLE transactions ADD COLUMN IF NOT EXISTS user_id VARCHAR(64);
       CREATE INDEX IF NOT EXISTS idx_transactions_attendance ON transactions(attendance_id);
+      CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date DESC);
+      CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
+      CREATE INDEX IF NOT EXISTS idx_transactions_att_status ON transactions(attendance_id, status);
 
       -- Idempotency Keys Table
       CREATE TABLE IF NOT EXISTS idempotency_keys (
@@ -117,6 +121,9 @@ export const initDatabase = async () => {
 
       CREATE INDEX IF NOT EXISTS idx_attendances_date ON cashier_attendances(date);
       CREATE INDEX IF NOT EXISTS idx_attendances_user ON cashier_attendances(user_id);
+      CREATE INDEX IF NOT EXISTS idx_attendances_status ON cashier_attendances(status);
+      CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+      CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
     `);
 
     // 3. Cashier Profile Table

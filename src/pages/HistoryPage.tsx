@@ -15,18 +15,41 @@ import {
   CreditCard,
   X,
   Calendar,
-  FileText
+  FileText,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { ArfaInvoiceModal } from '../components/ArfaInvoiceModal';
 
 export const HistoryPage: React.FC = () => {
-  const { transactions, setSelectedReceipt, confirmTransferPayment, cancelTransaction, isSuperAdmin, attendance, attendanceStatus } = usePOS();
+  const { 
+    transactions, 
+    transactionsPagination, 
+    fetchTransactions, 
+    setSelectedReceipt, 
+    confirmTransferPayment, 
+    cancelTransaction, 
+    isSuperAdmin, 
+    attendance, 
+    attendanceStatus 
+  } = usePOS();
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('SEMUA');
   const [methodFilter, setMethodFilter] = useState<string>('SEMUA');
+  const [dateFilterStart, setDateFilterStart] = useState<string>('');
+  const [dateFilterEnd, setDateFilterEnd] = useState<string>('');
   const [selectedTxDetail, setSelectedTxDetail] = useState<Transaction | null>(null);
   const [selectedInvoiceTx, setSelectedInvoiceTx] = useState<Transaction | null>(null);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > (transactionsPagination?.totalPages || 1)) return;
+    fetchTransactions(newPage, transactionsPagination?.limit || 20, dateFilterStart || undefined, dateFilterEnd || undefined);
+  };
+
+  const handleApplyDateFilter = () => {
+    fetchTransactions(1, transactionsPagination?.limit || 20, dateFilterStart || undefined, dateFilterEnd || undefined);
+  };
 
   // Kasir: hanya tampilkan transaksi sesi absensi shift saat ini (0 di awal masuk shift)
   // Admin: tampilkan semua transaksi arsip
@@ -71,7 +94,7 @@ export const HistoryPage: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
-            Total Transaksi: <strong className="text-slate-900">{sessionTransactions.length}</strong>
+            Total Transaksi: <strong className="text-slate-900">{isSuperAdmin ? (transactionsPagination?.total ?? sessionTransactions.length) : sessionTransactions.length}</strong>
           </span>
         </div>
       </div>
@@ -121,6 +144,32 @@ export const HistoryPage: React.FC = () => {
               <option value="TRANSFER">Transfer / QRIS</option>
             </select>
           </div>
+
+          {/* Date Filter (Super Admin) */}
+          {isSuperAdmin && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-500 font-medium">Tanggal:</span>
+              <input
+                type="date"
+                value={dateFilterStart}
+                onChange={(e) => setDateFilterStart(e.target.value)}
+                className="text-xs bg-white border border-slate-200 rounded-xl px-2 py-1 text-slate-700 outline-hidden focus:border-brand-600 shadow-2xs"
+              />
+              <span className="text-xs text-slate-400">-</span>
+              <input
+                type="date"
+                value={dateFilterEnd}
+                onChange={(e) => setDateFilterEnd(e.target.value)}
+                className="text-xs bg-white border border-slate-200 rounded-xl px-2 py-1 text-slate-700 outline-hidden focus:border-brand-600 shadow-2xs"
+              />
+              <button
+                onClick={handleApplyDateFilter}
+                className="px-2.5 py-1 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold shadow-2xs transition-colors"
+              >
+                Terapkan
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -374,6 +423,36 @@ export const HistoryPage: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Pagination Bar */}
+        {transactionsPagination && transactionsPagination.totalPages > 1 && (
+          <div className="mt-4 bg-white rounded-2xl border border-slate-200 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+            <span className="text-xs text-slate-500 font-medium">
+              Halaman <strong className="text-slate-800">{transactionsPagination.page}</strong> dari <strong className="text-slate-800">{transactionsPagination.totalPages}</strong> ({transactionsPagination.total} total riwayat)
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handlePageChange(transactionsPagination.page - 1)}
+                disabled={transactionsPagination.page <= 1}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Sebelumnya</span>
+              </button>
+              <span className="text-xs font-bold text-slate-700 px-2">
+                {transactionsPagination.page} / {transactionsPagination.totalPages}
+              </span>
+              <button
+                onClick={() => handlePageChange(transactionsPagination.page + 1)}
+                disabled={transactionsPagination.page >= transactionsPagination.totalPages}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition-colors"
+              >
+                <span>Selanjutnya</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Transaction Detail Modal */}

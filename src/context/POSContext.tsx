@@ -11,7 +11,8 @@ import {
   StoreSettings,
   ProductVariant,
   AttendanceStatus,
-  CashierAttendance
+  CashierAttendance,
+  PaginationInfo
 } from '../types';
 import { 
   INITIAL_PRODUCTS, 
@@ -88,6 +89,8 @@ interface POSContextType {
   
   // Transactions
   transactions: Transaction[];
+  transactionsPagination: PaginationInfo;
+  fetchTransactions: (page?: number, limit?: number, startDate?: string, endDate?: string) => Promise<void>;
   createCashTransaction: (cashGiven: number, methodName?: string, customerName?: string, customerPhone?: string) => Promise<{ success: boolean; transaction?: Transaction; error?: string }>;
   createTransferTransaction: (methodName: string, transferBank: string, proofUrl: string, isConfirmedDirectly: boolean, customerName?: string, customerPhone?: string) => Promise<{ success: boolean; transaction?: Transaction; error?: string }>;
   confirmTransferPayment: (transactionId: string) => void;
@@ -189,11 +192,18 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           t.id === 'TRX-101' || t.invoiceNumber?.startsWith('INV/20260919')
         );
         if (!hasOldGroceryTx && !hasOldDummyTx && parsed.length > 0) {
-          return parsed;
+          return parsed.slice(0, 50);
         }
       } catch (e) { console.error(e); }
     }
     return INITIAL_TRANSACTIONS;
+  });
+
+  const [transactionsPagination, setTransactionsPagination] = useState<PaginationInfo>({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 1
   });
 
   const [cashier, setCashier] = useState<CashierProfile>(() => {
@@ -631,16 +641,25 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (Array.isArray(prodData) && prodData.length > 0) {
             setProducts(prodData);
           }
-          if (Array.isArray(txData)) {
-            setTransactions(txData);
-            localStorage.setItem('pos_transactions', JSON.stringify(txData));
-            // Jika transaksi di DB 0 (baru di-reset), bersihkan juga keranjang dan cache absensi lama
-            if (txData.length === 0) {
-              setCart([]);
-              setHeldCart(null);
-              localStorage.removeItem('pos_cart');
-              localStorage.removeItem('pos_held_cart');
-            }
+          const txList = Array.isArray(txData) ? txData : (txData?.data || []);
+          setTransactions(txList);
+          if (txData?.pagination) {
+            setTransactionsPagination(txData.pagination);
+          } else {
+            setTransactionsPagination({
+              page: 1,
+              limit: 20,
+              total: txList.length,
+              totalPages: Math.ceil(txList.length / 20) || 1
+            });
+          }
+          localStorage.setItem('pos_transactions', JSON.stringify(txList.slice(0, 50)));
+          // Jika transaksi di DB 0 (baru di-reset), bersihkan juga keranjang dan cache absensi lama
+          if (txList.length === 0) {
+            setCart([]);
+            setHeldCart(null);
+            localStorage.removeItem('pos_cart');
+            localStorage.removeItem('pos_held_cart');
           }
           if (cashierRes.ok) {
             const cashierData = await cashierRes.json();
@@ -724,7 +743,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [products]);
 
   useEffect(() => {
-    localStorage.setItem('pos_transactions', JSON.stringify(transactions));
+    // Only cache recent transactions (max 50) to prevent unlimited localStorage bloat
+    const recent = transactions.slice(0, 50);
+    localStorage.setItem('pos_transactions', JSON.stringify(recent));
   }, [transactions]);
 
   useEffect(() => {
@@ -1144,7 +1165,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const newTx: Transaction = data;
       deductStock(items);
-      setTransactions(prev => [newTx, ...prev]);
+      setTransactions(prev => [newTx, ...prev.slice(0, 49)]);
+      setTransactionsPagination(prev => {
+        const newTotal = prev.total + 1;
+        return {
+          ...prev,
+          total: newTotal,
+          totalPages: Math.ceil(newTotal / prev.limit) || 1
+        };
+      });
       clearCart();
       setIsCheckoutOpen(false);
       setSelectedReceipt(newTx);
@@ -1219,7 +1248,15 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const newTx: Transaction = data;
       deductStock(items);
-      setTransactions(prev => [newTx, ...prev]);
+      setTransactions(prev => [newTx, ...prev.slice(0, 49)]);
+      setTransactionsPagination(prev => {
+        const newTotal = prev.total + 1;
+        return {
+          ...prev,
+          total: newTotal,
+          totalPages: Math.ceil(newTotal / prev.limit) || 1
+        };
+      });
       clearCart();
       setIsCheckoutOpen(false);
       if (isConfirmedDirectly) {
@@ -1324,6 +1361,42 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'Gagal terhubung ke server. Silakan coba lagi.' };
     }
   };
+
+  const fetchTransactions = useCallback(async (page = 1, limit = 20, startDate?: string, endDate?: string) => {
+    const token = authToken || sessionStorage.getItem('pos_auth_token') || '';
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(limit)
+      });
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
+
+      const res = await fetch(`/api/transactions?${params.toString()}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      if (res.ok) {
+        const result = await res.json();
+        const txList = Array.isArray(result) ? result : (result.data || []);
+        setTransactions(txList);
+        if (result.pagination) {
+          setTransactionsPagination(result.pagination);
+        } else {
+          setTransactionsPagination({
+            page,
+            limit,
+            total: txList.length,
+            totalPages: Math.ceil(txList.length / limit) || 1
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch paginated transactions:', err);
+    }
+  }, [authToken]);
 
   const pendingConfirmations = useMemo(() => {
     return transactions.filter(tx => tx.status === 'MENUNGGU_KONFIRMASI');
@@ -1440,6 +1513,8 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         holdCurrentCart,
         restoreHeldCart,
         transactions,
+        transactionsPagination,
+        fetchTransactions,
         createCashTransaction,
         createTransferTransaction,
         confirmTransferPayment,

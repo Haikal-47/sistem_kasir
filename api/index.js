@@ -577,31 +577,51 @@ router.get('/attendance/laporan', requireAdmin, async (req, res) => {
     );
 
     const rows = result.rows;
-    const attendanceList = [];
+    if (rows.length === 0) {
+      return res.json({ attendances: [], total: 0 });
+    }
 
-    for (const row of rows) {
-      const txResult = await pool.query(
-        `SELECT payment_method, SUM(total) as total_amount, COUNT(*) as tx_count
-         FROM transactions
-         WHERE attendance_id = $1 AND status = 'LUNAS'
-         GROUP BY payment_method`,
-        [row.id]
-      );
+    // Eliminate N+1: Aggregate all transaction stats in a single grouped query
+    const attendanceIds = rows.map(r => r.id);
+    const txResult = await pool.query(
+      `SELECT attendance_id, payment_method, SUM(total) as total_amount, COUNT(*) as tx_count
+       FROM transactions
+       WHERE attendance_id = ANY($1::varchar[]) AND status = 'LUNAS'
+       GROUP BY attendance_id, payment_method`,
+      [attendanceIds]
+    );
 
-      let cashSales = 0, transferSales = 0, qrisSales = 0, totalRevenue = 0, totalTx = 0;
-      for (const tx of txResult.rows) {
-        const amount = parseFloat(tx.total_amount);
-        const count = parseInt(tx.tx_count, 10);
-        totalRevenue += amount;
-        totalTx += count;
-        const methodUpper = (tx.payment_method || '').toUpperCase();
-        if (methodUpper === 'TUNAI') cashSales += amount;
-        else if (methodUpper.includes('QRIS')) qrisSales += amount;
-        else transferSales += amount;
+    const statsMap = new Map();
+    for (const tx of txResult.rows) {
+      let stat = statsMap.get(tx.attendance_id);
+      if (!stat) {
+        stat = { cashSales: 0, transferSales: 0, qrisSales: 0, totalRevenue: 0, totalTx: 0 };
+        statsMap.set(tx.attendance_id, stat);
       }
+      const amount = parseFloat(tx.total_amount);
+      const count = parseInt(tx.tx_count, 10);
+      stat.totalRevenue += amount;
+      stat.totalTx += count;
+      const methodUpper = (tx.payment_method || '').toUpperCase();
+      if (methodUpper === 'TUNAI') stat.cashSales += amount;
+      else if (methodUpper.includes('QRIS')) stat.qrisSales += amount;
+      else stat.transferSales += amount;
+    }
 
-      const expectedCash = parseFloat(row.opening_cash || 500000) + cashSales;
-      const stats = { totalTransactions: totalTx, totalRevenue, cashSales, qrisSales, transferSales, otherSales: 0, expectedCash };
+    const attendanceList = [];
+    for (const row of rows) {
+      const s = statsMap.get(row.id) || { cashSales: 0, transferSales: 0, qrisSales: 0, totalRevenue: 0, totalTx: 0 };
+      const openingCash = parseFloat(row.opening_cash || 500000);
+      const expectedCash = openingCash + s.cashSales;
+      const stats = {
+        totalTransactions: s.totalTx,
+        totalRevenue: s.totalRevenue,
+        cashSales: s.cashSales,
+        qrisSales: s.qrisSales,
+        transferSales: s.transferSales,
+        otherSales: 0,
+        expectedCash
+      };
       attendanceList.push(formatAttendanceRow(row, stats));
     }
 
@@ -970,23 +990,65 @@ router.delete('/products/:id', requireAdmin, async (req, res) => {
 
 router.get('/transactions', requireAuth, async (req, res) => {
   try {
-    let result;
-    if (req.user && (req.user.role === 'super_admin' || req.user.role === 'admin')) {
-      result = await pool.query('SELECT * FROM transactions ORDER BY date DESC');
-    } else {
-      result = await pool.query(
-        `SELECT * FROM transactions 
-         WHERE user_id = $1 
-            OR attendance_id IN (SELECT id FROM cashier_attendances WHERE user_id = $1)
-            OR cashier_name = $2
-         ORDER BY date DESC`,
-        [req.user.id, req.user.name]
-      );
+    // 1. Pagination parameters (defaults: page=1, limit=20, max limit=100)
+    let page = parseInt(req.query.page, 10);
+    if (isNaN(page) || page < 1) page = 1;
+
+    let limit = parseInt(req.query.limit, 10);
+    if (isNaN(limit) || limit < 1) limit = 20;
+    if (limit > 100) limit = 100;
+
+    const offset = (page - 1) * limit;
+
+    // 2. Query conditions and parameters
+    const conditions = [];
+    const params = [];
+    let pIdx = 1;
+
+    // Role-based scoping (Phase 2 security rule preserved)
+    const isAdmin = req.user && (req.user.role === 'super_admin' || req.user.role === 'admin');
+    if (!isAdmin) {
+      conditions.push(`(user_id = $${pIdx} OR attendance_id IN (SELECT id FROM cashier_attendances WHERE user_id = $${pIdx}) OR cashier_name = $${pIdx + 1})`);
+      params.push(req.user.id, req.user.name);
+      pIdx += 2;
     }
+
+    // Optional Date filtering
+    const { startDate, endDate } = req.query;
+    if (startDate) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDate).trim())) {
+        return res.status(400).json({ error: 'Format startDate tidak valid. Gunakan format YYYY-MM-DD.' });
+      }
+      conditions.push(`date >= $${pIdx}`);
+      params.push(`${String(startDate).trim()}T00:00:00+07:00`);
+      pIdx++;
+    }
+
+    if (endDate) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(endDate).trim())) {
+        return res.status(400).json({ error: 'Format endDate tidak valid. Gunakan format YYYY-MM-DD.' });
+      }
+      conditions.push(`date <= $${pIdx}`);
+      params.push(`${String(endDate).trim()}T23:59:59.999+07:00`);
+      pIdx++;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // 3. Count query (uses exact same scoping and filters)
+    const countResult = await pool.query(`SELECT COUNT(*) as total FROM transactions ${whereClause}`, params);
+    const total = parseInt(countResult.rows[0]?.total || '0', 10);
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    // 4. Data query with deterministic ordering (ORDER BY date DESC, id DESC)
+    const dataParams = [...params, limit, offset];
+    const dataQuery = `SELECT * FROM transactions ${whereClause} ORDER BY date DESC, id DESC LIMIT $${pIdx} OFFSET $${pIdx + 1}`;
+    const result = await pool.query(dataQuery, dataParams);
+
     const transactions = result.rows.map(r => ({
       id: r.id,
       invoiceNumber: r.invoice_number,
-      date: r.date instanceof Date ? r.date.toISOString() : r.date,
+      date: r.date instanceof Date ? r.date.toISOString() : (r.date?.toISOString ? r.date.toISOString() : r.date),
       cashierName: r.cashier_name,
       items: typeof r.items === 'string' ? JSON.parse(r.items) : r.items,
       subtotal: parseFloat(r.subtotal),
@@ -1008,7 +1070,16 @@ router.get('/transactions', requireAuth, async (req, res) => {
       attendanceId: r.attendance_id || undefined,
       userId: r.user_id || undefined,
     }));
-    res.json(transactions);
+
+    res.json({
+      data: transactions,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages
+      }
+    });
   } catch (error) {
     console.error('[GET /transactions ERROR]:', error);
     res.status(500).json({ error: 'Gagal memuat data transaksi.' });

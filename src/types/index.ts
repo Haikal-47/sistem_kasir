@@ -91,6 +91,18 @@ export interface Transaction {
   attendanceId?: string;
 }
 
+export interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedTransactionsResponse {
+  data: Transaction[];
+  pagination: PaginationInfo;
+}
+
 export type AttendanceStatus = 'not_started' | 'working' | 'completed';
 
 export interface AttendanceStats {

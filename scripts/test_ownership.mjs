@@ -46,21 +46,24 @@ async function testOwnership() {
     const adminRes = await fetch(`${BASE_URL}/api/transactions`, {
       headers: { 'Authorization': `Bearer ${adminToken}` }
     });
-    const adminTxs = await adminRes.json();
+    const adminData = await adminRes.json();
+    const adminTxs = Array.isArray(adminData) ? adminData : (adminData.data || []);
     console.log(`Admin sees: ${adminTxs.length} transactions`);
 
     // 2. Cashier Gusti fetches transactions
     const gustiRes = await fetch(`${BASE_URL}/api/transactions`, {
       headers: { 'Authorization': `Bearer ${cashierGustiToken}` }
     });
-    const gustiTxs = await gustiRes.json();
+    const gustiData = await gustiRes.json();
+    const gustiTxs = Array.isArray(gustiData) ? gustiData : (gustiData.data || []);
     console.log(`Gusti sees: ${gustiTxs.length} transactions`);
 
     // 3. New Cashier with no transactions fetches transactions
     const otherRes = await fetch(`${BASE_URL}/api/transactions`, {
       headers: { 'Authorization': `Bearer ${cashierOtherToken}` }
     });
-    const otherTxs = await otherRes.json();
+    const otherData = await otherRes.json();
+    const otherTxs = Array.isArray(otherData) ? otherData : (otherData.data || []);
     console.log(`Other Kasir sees: ${otherTxs.length} transactions`);
 
     const passed = Array.isArray(adminTxs) && 

@@ -122,6 +122,13 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_attendance ON transactions(attendance_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_invoice ON transactions(invoice_number);
+CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
+CREATE INDEX IF NOT EXISTS idx_transactions_att_status ON transactions(attendance_id, status);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_attendances_status ON cashier_attendances(status);
 
 -- 8. TABEL WIRELESS SCANNER (SCANNER SESSIONS & PENDING SCANS)
 CREATE TABLE IF NOT EXISTS scanner_sessions (
