@@ -51,6 +51,11 @@ export const HistoryPage: React.FC = () => {
     fetchTransactions(1, transactionsPagination?.limit || 20, dateFilterStart || undefined, dateFilterEnd || undefined);
   };
 
+  // Muat transaksi terbaru dari backend saat membuka halaman Riwayat
+  React.useEffect(() => {
+    fetchTransactions(1, transactionsPagination?.limit || 20);
+  }, [fetchTransactions]);
+
   // Kasir: hanya tampilkan transaksi sesi absensi shift saat ini (0 di awal masuk shift)
   // Admin: tampilkan semua transaksi arsip
   const sessionTransactions = (() => {

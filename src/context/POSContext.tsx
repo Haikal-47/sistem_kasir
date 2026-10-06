@@ -134,6 +134,17 @@ interface POSContextType {
 const POSContext = createContext<POSContextType | undefined>(undefined);
 
 export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Purge any stale client-side localStorage from previous sessions before store reset
+  const STORE_RESET_VERSION = '20261006_FRESH_STORE_V1';
+  if (typeof window !== 'undefined' && localStorage.getItem('pos_store_reset_version') !== STORE_RESET_VERSION) {
+    localStorage.removeItem('pos_products');
+    localStorage.removeItem('pos_transactions');
+    localStorage.removeItem('pos_cart');
+    localStorage.removeItem('pos_held_cart');
+    localStorage.removeItem('pos_attendance_today');
+    localStorage.setItem('pos_store_reset_version', STORE_RESET_VERSION);
+  }
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
 
@@ -596,21 +607,31 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     const loadFromNeonDb = async () => {
       try {
+        const token = sessionStorage.getItem('pos_auth_token') || authToken;
         const [prodRes, txRes, cashierRes, pmRes, setRes] = await Promise.all([
           fetch('/api/products'),
-          fetch('/api/transactions'),
+          fetch('/api/transactions', {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+          }),
           fetch('/api/cashier'),
           fetch('/api/payment-methods'),
           fetch('/api/settings'),
         ]);
 
-        if (prodRes.ok && txRes.ok) {
+        if (prodRes.ok) {
           const prodData = await prodRes.json();
-          const txData = await txRes.json();
           if (Array.isArray(prodData)) {
             setProducts(prodData);
-            localStorage.setItem('pos_products', JSON.stringify(prodData));
+            if (prodData.length === 0) {
+              localStorage.removeItem('pos_products');
+            } else {
+              localStorage.setItem('pos_products', JSON.stringify(prodData));
+            }
           }
+        }
+
+        if (txRes.ok) {
+          const txData = await txRes.json();
           const txList = Array.isArray(txData) ? txData : (txData?.data || []);
           setTransactions(txList);
           if (txData?.pagination) {
@@ -623,62 +644,61 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               totalPages: Math.ceil(txList.length / 20) || 1
             });
           }
-          localStorage.setItem('pos_transactions', JSON.stringify(txList.slice(0, 50)));
-          // Jika transaksi di DB 0 (baru di-reset), bersihkan juga keranjang dan cache absensi lama
           if (txList.length === 0) {
             setCart([]);
             setHeldCart(null);
             localStorage.removeItem('pos_cart');
             localStorage.removeItem('pos_held_cart');
+            localStorage.removeItem('pos_transactions');
+          } else {
+            localStorage.setItem('pos_transactions', JSON.stringify(txList.slice(0, 50)));
           }
-          if (cashierRes.ok) {
-            const cashierData = await cashierRes.json();
-            if (cashierData && cashierData.name) {
-              setCashier(cashierData);
-            }
-          }
-          if (pmRes.ok) {
-            const pmData = await pmRes.json();
-            if (Array.isArray(pmData) && pmData.length > 0) {
-              setPaymentMethods(pmData);
-            }
-          }
-          if (setRes.ok) {
-            const setData = await setRes.json();
-            if (setData && setData.storeName) {
-              setStoreSettings(setData);
-            }
-          }
-          setIsDbConnected(true);
+        }
 
-          // Sinkronisasi status absensi kasir dengan server
-          const token = sessionStorage.getItem('pos_auth_token');
-          if (token) {
-            try {
-              const attRes = await fetch('/api/attendance/today', {
-                headers: { 'Authorization': `Bearer ${token}` }
-              });
-              if (attRes.ok) {
-                const attData = await attRes.json();
-                if (attData.status === 'not_started' || !attData.attendance) {
-                  setAttendance(null);
-                  setAttendanceStatus('not_started');
-                  localStorage.removeItem('pos_attendance_today');
-                } else {
-                  setAttendance(attData.attendance);
-                  setAttendanceStatus(attData.status);
-                  localStorage.setItem('pos_attendance_today', JSON.stringify(attData.attendance));
-                }
-              }
-            } catch (e) {
-              console.warn(e);
-            }
-          } else if (txData.length === 0) {
-            setAttendance(null);
-            setAttendanceStatus('not_started');
-            localStorage.removeItem('pos_attendance_today');
+        if (cashierRes.ok) {
+          const cashierData = await cashierRes.json();
+          if (cashierData && cashierData.name) {
+            setCashier(cashierData);
           }
-          // Attendance dipanggil dari useEffect yang watch authToken, bukan di sini
+        }
+
+        if (pmRes.ok) {
+          const pmData = await pmRes.json();
+          if (Array.isArray(pmData) && pmData.length > 0) {
+            setPaymentMethods(pmData);
+          }
+        }
+
+        if (setRes.ok) {
+          const setData = await setRes.json();
+          if (setData && setData.storeName) {
+            setStoreSettings(setData);
+          }
+        }
+
+        setIsDbConnected(true);
+
+        // Sinkronisasi status absensi kasir dengan server
+        if (token) {
+          try {
+            const attRes = await fetch('/api/attendance/today', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (attRes.ok) {
+              const attData = await attRes.json();
+              if (attData.status === 'not_started' || !attData.attendance) {
+                setAttendance(null);
+                setAttendanceStatus('not_started');
+                localStorage.removeItem('pos_attendance_today');
+              } else {
+                setAttendance(attData.attendance);
+                setAttendanceStatus(attData.status);
+                localStorage.setItem('pos_attendance_today', JSON.stringify(attData.attendance));
+              }
+            }
+          } catch (e) {
+            console.warn(e);
+          }
         }
       } catch (err) {
         console.warn('Backend Neon API not reached, using local fallback:', err);
