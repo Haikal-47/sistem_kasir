@@ -650,13 +650,19 @@ async function runTests() {
     }
 
     // ── CLEANUP TEST DATA ───────────────────────────────────────────────
-    // Clean up test products and transactions created during this test
+    // Clean up test products, transactions, and test users created during this test
     await client.query(`
       DELETE FROM transactions WHERE customer_name IN ('Pelanggan P63', 'Pelanggan Race', 'Pelanggan Cancel')
     `);
     await client.query(`
       DELETE FROM products WHERE id IN ($1, $2)
     `, [idA, idB]);
+    await client.query(`
+      DELETE FROM cashier_attendances WHERE id = 'ATT-P63-001' OR user_id IN ($1, $2)
+    `, [TEST_CASHIER.id, TEST_ADMIN.id]);
+    await client.query(`
+      DELETE FROM users WHERE id IN ($1, $2)
+    `, [TEST_CASHIER.id, TEST_ADMIN.id]);
 
   } finally {
     client.release();
