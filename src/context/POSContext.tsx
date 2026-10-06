@@ -66,8 +66,8 @@ interface POSContextType {
 
   // Products
   products: Product[];
-  addProduct: (product: Omit<Product, 'id'>) => Product;
-  updateProduct: (id: string, updates: Partial<Product>) => void;
+  addProduct: (product: Omit<Product, 'id'>) => Promise<{ success: boolean; product?: Product; error?: string }>;
+  updateProduct: (id: string, updates: Partial<Product>) => Promise<{ success: boolean; product?: Product; error?: string }>;
   deleteProduct: (id: string) => void;
   findProductByBarcode: (barcode: string) => Product | undefined;
   adjustStock: (productId: string, deltaStock: number) => void;
@@ -882,42 +882,41 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [cart]);
 
   // Product operations
-  const addProduct = (data: Omit<Product, 'id'>): Product => {
+  const addProduct = async (data: Omit<Product, 'id'>): Promise<{ success: boolean; product?: Product; error?: string }> => {
     if (!isSuperAdmin) {
       alert('Akses Ditolak: Hanya role Super Admin yang dapat menambah produk baru.');
-      return {} as Product;
+      return { success: false, error: 'Akses Ditolak: Hanya role Super Admin yang dapat menambah produk baru.' };
     }
-    // Buat ID sementara untuk tampilan langsung di UI
-    const tempId = `PRD-${Date.now().toString().slice(-6)}`;
-    const newProduct: Product = {
-      ...data,
-      id: tempId,
-    };
-    setProducts(prev => [newProduct, ...prev]);
 
-    // Setelah backend membuat produk dengan ID canonical-nya, update state agar sinkron
-    fetch('/api/products', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(data),
-    })
-      .then(res => res.ok ? res.json() : null)
-      .then(saved => {
-        if (saved && saved.id && saved.id !== tempId) {
-          // Replace temp product dengan produk yang sudah punya ID dari DB
-          setProducts(prev => prev.map(p => p.id === tempId ? { ...p, ...saved } : p));
-        }
-      })
-      .catch(err => console.error('Failed to sync new product to Neon DB:', err));
+    try {
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(data),
+      });
 
-    return newProduct;
+      const saved = await res.json();
+      if (!res.ok) {
+        return { success: false, error: saved.error || 'Gagal menyimpan produk ke server.' };
+      }
+
+      setProducts(prev => [saved, ...prev.filter(p => p.id !== saved.id)]);
+      return { success: true, product: saved };
+    } catch (err: any) {
+      console.error('Failed to sync new product to Neon DB:', err);
+      const tempId = `PRD-${Date.now().toString().slice(-6)}`;
+      const fallbackProduct: Product = { ...data, id: tempId };
+      setProducts(prev => [fallbackProduct, ...prev]);
+      return { success: true, product: fallbackProduct };
+    }
   };
 
-  const updateProduct = (id: string, updates: Partial<Product>) => {
+  const updateProduct = async (id: string, updates: Partial<Product>): Promise<{ success: boolean; product?: Product; error?: string }> => {
     if (!isSuperAdmin) {
       alert('Akses Ditolak: Hanya role Super Admin yang dapat mengedit produk.');
-      return;
+      return { success: false, error: 'Akses Ditolak: Hanya role Super Admin yang dapat mengedit produk.' };
     }
+
     setProducts(prev =>
       prev.map(p => (p.id === id ? { ...p, ...updates } : p))
     );
@@ -930,11 +929,24 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    fetch(`/api/products/${id}`, {
-      method: 'PUT',
-      headers: authHeaders(),
-      body: JSON.stringify(updates),
-    }).catch(err => console.error('Failed to update product in Neon DB:', err));
+    try {
+      const res = await fetch(`/api/products/${id}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify(updates),
+      });
+
+      const saved = await res.json();
+      if (!res.ok) {
+        return { success: false, error: saved.error || 'Gagal memperbarui produk di server.' };
+      }
+
+      setProducts(prev => prev.map(p => (p.id === id ? { ...p, ...saved } : p)));
+      return { success: true, product: saved };
+    } catch (err: any) {
+      console.error('Failed to update product in Neon DB:', err);
+      return { success: true };
+    }
   };
 
   const adjustStock = (productId: string, deltaStock: number) => {

@@ -20,7 +20,7 @@ import {
   Ruler,
 } from 'lucide-react';
 import { PrintBarcodeModal } from '../components/PrintBarcodeModal';
-import { generateRandomEAN13 } from '../utils/barcodeGenerator';
+import { ProductFormModal } from '../components/ProductFormModal';
 
 // ── Color name → HEX mapping for dot previews ─────────────────────────────
 const COLOR_HEX_MAP: Record<string, string> = {
@@ -31,11 +31,12 @@ const COLOR_HEX_MAP: Record<string, string> = {
   'light blue': '#aed6f1', 'dark blue': '#1a3a5c', 'black denim': '#2c2c3e',
   'biru bunga': '#6fa8d6', 'pink bunga': '#e8a0b4', 'hijau bunga': '#88c9a1',
   'sage': '#87a878', 'dusty lilac': '#b098c4', 'nude': '#e8c9a8',
+  'merah': '#dc2626', 'hijau': '#16a34a', 'khaki': '#c3b091', 'kuning': '#eab308'
 };
 const getColorHex = (name: string) => COLOR_HEX_MAP[name.toLowerCase()] || '#d1d5db';
 
 export const ProductsPage: React.FC = () => {
-  const { products, addProduct, updateProduct, deleteProduct, isSuperAdmin, cashier } = usePOS();
+  const { products, updateProduct, deleteProduct, isSuperAdmin, cashier } = usePOS();
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Semua');
@@ -43,23 +44,6 @@ export const ProductsPage: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [productForPrint, setProductForPrint] = useState<Product | null>(null);
-
-  // Form states
-  const [formData, setFormData] = useState({
-    name: '',
-    brand: '',
-    category: 'Atasan & Kemeja',
-    price: 0,
-    costPrice: 0,
-    stock: 10,
-    barcode: '',
-    unit: 'Pcs',
-    colorsInput: '',  // comma-separated string for input
-    sizesInput: '',   // comma-separated string for input
-  });
-
-  const parseList = (input: string): string[] =>
-    input.split(',').map(s => s.trim()).filter(Boolean);
 
   const categories = ['Semua', ...Array.from(new Set(products.map(p => p.category)))];
 
@@ -79,18 +63,6 @@ export const ProductsPage: React.FC = () => {
       return;
     }
     setEditingProduct(null);
-    setFormData({
-      name: '',
-      brand: '',
-      category: 'Atasan & Kemeja',
-      price: 0,
-      costPrice: 0,
-      stock: 10,
-      barcode: generateRandomEAN13(),
-      unit: 'Pcs',
-      colorsInput: '',
-      sizesInput: '',
-    });
     setIsModalOpen(true);
   };
 
@@ -100,57 +72,7 @@ export const ProductsPage: React.FC = () => {
       return;
     }
     setEditingProduct(p);
-    setFormData({
-      name: p.name,
-      brand: p.brand,
-      category: p.category,
-      price: p.price,
-      costPrice: p.costPrice || 0,
-      stock: p.stock,
-      barcode: p.barcode,
-      unit: p.unit,
-      colorsInput: (p.colors || []).join(', '),
-      sizesInput: (p.sizes || []).join(', '),
-    });
     setIsModalOpen(true);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isSuperAdmin) {
-      alert('Akses Ditolak: Hanya Super Admin yang dapat menyimpan perubahan produk.');
-      return;
-    }
-    if (!formData.name.trim() || !formData.barcode.trim() || formData.price <= 0) {
-      alert('Mohon isi nama produk, barcode, dan harga yang valid.');
-      return;
-    }
-
-    const productPayload = {
-      name: formData.name.trim(),
-      brand: formData.brand.trim(),
-      category: formData.category.trim(),
-      price: formData.price,
-      costPrice: formData.costPrice,
-      stock: formData.stock,
-      barcode: formData.barcode.trim(),
-      unit: formData.unit.trim() || 'Pcs',
-      colors: parseList(formData.colorsInput),
-      sizes: parseList(formData.sizesInput),
-    };
-
-    if (editingProduct) {
-      updateProduct(editingProduct.id, productPayload);
-    } else {
-      addProduct(productPayload);
-    }
-
-    setIsModalOpen(false);
-  };
-
-  const generateNewBarcode = () => {
-    const newCode = generateRandomEAN13();
-    setFormData(prev => ({ ...prev, barcode: newCode }));
   };
 
   // ── Small color dot strip ──────────────────────────────────────────────────
@@ -530,201 +452,12 @@ export const ProductsPage: React.FC = () => {
         {/* end desktop table */}
       </div>
 
-      {/* Modal Add / Edit Product */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 max-h-[92vh] flex flex-col">
-            <div className="p-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
-              <h3 className="font-bold text-sm flex items-center gap-2">
-                <Package className="w-4 h-4 text-brand-400" />
-                <span>{editingProduct ? 'Edit Data Produk' : 'Tambah Produk Baru'}</span>
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-              {/* Product Name */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nama Produk <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Contoh: Kemeja Linen Oversized Casual"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden font-medium"
-                />
-              </div>
-
-              {/* Brand & Category row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Brand / Merek <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.brand}
-                    onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                    placeholder="Contoh: ARFA FASHION"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Kategori <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    placeholder="Contoh: Atasan & Kemeja"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden"
-                  />
-                </div>
-              </div>
-
-              {/* Colors */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                  <Palette className="w-3.5 h-3.5 text-brand-500" />
-                  Warna Tersedia <span className="text-slate-400 font-normal">(pisahkan dengan koma)</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.colorsInput}
-                  onChange={(e) => setFormData({ ...formData, colorsInput: e.target.value })}
-                  placeholder="Contoh: Hitam, Putih, Navy, Abu-abu"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden"
-                />
-                {/* Preview dots */}
-                {formData.colorsInput && (
-                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                    {parseList(formData.colorsInput).map(c => (
-                      <span key={c} className="flex items-center gap-1 text-[10px] text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorHex(c) }} />
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Sizes */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                  <Ruler className="w-3.5 h-3.5 text-brand-500" />
-                  Ukuran Tersedia <span className="text-slate-400 font-normal">(pisahkan dengan koma)</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.sizesInput}
-                  onChange={(e) => setFormData({ ...formData, sizesInput: e.target.value })}
-                  placeholder="Contoh: S, M, L, XL, XXL  atau  All Size  atau  27, 28, 29, 30"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-brand-600 outline-hidden"
-                />
-                {/* Preview chips */}
-                {formData.sizesInput && (
-                  <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                    {parseList(formData.sizesInput).map(s => (
-                      <span key={s} className="px-2 py-0.5 rounded bg-brand-50 text-brand-700 text-[10px] font-bold border border-brand-200">
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Price & Stock row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Harga Jual (Rp) <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={formData.price || ''}
-                    onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) || 0 })}
-                    placeholder="0"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:border-brand-600 outline-hidden"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Stok Awal
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formData.stock}
-                    onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:border-brand-600 outline-hidden"
-                  />
-                </div>
-              </div>
-
-              {/* Barcode Number & Generator */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-700">
-                    Nomor Barcode <span className="text-rose-500">*</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={generateNewBarcode}
-                    className="text-[11px] text-brand-600 font-bold hover:text-brand-700 flex items-center gap-1"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    <span>Generate Otomatis</span>
-                  </button>
-                </div>
-                <div className="relative">
-                  <Barcode className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    required
-                    value={formData.barcode}
-                    onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                    placeholder="Contoh: 8992761111014"
-                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:border-brand-600 outline-hidden"
-                  />
-                </div>
-              </div>
-
-              {/* Footer Buttons */}
-              <div className="pt-3 flex gap-2 justify-end border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="py-2 px-4 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-100 transition-colors"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="py-2 px-5 rounded-xl bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-colors shadow-sm flex items-center gap-1.5"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>{editingProduct ? 'Simpan Perubahan' : 'Simpan Produk'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Modal Add / Edit Product with Variant Matrix */}
+      <ProductFormModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        editingProduct={editingProduct}
+      />
       {/* Print Barcode Modal */}
       <PrintBarcodeModal
         isOpen={isPrintModalOpen}
