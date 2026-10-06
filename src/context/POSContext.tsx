@@ -121,7 +121,7 @@ interface POSContextType {
   // Profile & Password Management
   isProfileModalOpen: boolean;
   setIsProfileModalOpen: (open: boolean) => void;
-  changePassword: (role: UserRole, oldPass: string, newPass: string) => { success: boolean; message: string };
+  changePassword: (role: UserRole, oldPass: string, newPass: string) => Promise<{ success: boolean; message: string }>;
   verifyPassword: (role: UserRole, pass: string) => boolean;
   getRolePassword: (role: UserRole) => string;
   
@@ -1442,17 +1442,40 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return pass === getRolePassword(role);
   };
 
-  const changePassword = (role: UserRole, oldPass: string, newPass: string): { success: boolean; message: string } => {
-    const current = getRolePassword(role);
-    if (oldPass !== current) {
-      return { success: false, message: 'Kata sandi saat ini tidak cocok.' };
-    }
+  const changePassword = async (role: UserRole, oldPass: string, newPass: string): Promise<{ success: boolean; message: string }> => {
     if (!newPass || newPass.trim().length < 4) {
       return { success: false, message: 'Kata sandi baru minimal 4 karakter.' };
     }
-    const key = role === 'super_admin' ? 'pos_admin_pin' : 'pos_kasir_pin';
-    localStorage.setItem(key, btoa(newPass.trim()));
-    return { success: true, message: 'Kata sandi berhasil diperbarui!' };
+
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          currentPassword: oldPass,
+          newPassword: newPass.trim()
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, message: data.error || 'Gagal mengubah kata sandi.' };
+      }
+
+      // Sinkronkan juga ke local storage
+      const key = role === 'super_admin' ? 'pos_admin_pin' : 'pos_kasir_pin';
+      localStorage.setItem(key, btoa(newPass.trim()));
+      return { success: true, message: data.message || 'Kata sandi berhasil diperbarui!' };
+    } catch (err) {
+      console.warn('Gagal menghubungi backend saat ganti kata sandi, fallback ke lokal:', err);
+      const current = getRolePassword(role);
+      if (oldPass !== current) {
+        return { success: false, message: 'Kata sandi saat ini tidak cocok.' };
+      }
+      const key = role === 'super_admin' ? 'pos_admin_pin' : 'pos_kasir_pin';
+      localStorage.setItem(key, btoa(newPass.trim()));
+      return { success: true, message: 'Kata sandi berhasil diperbarui (offline).' };
+    }
   };
 
   const updateCashier = (updates: Partial<CashierProfile>) => {

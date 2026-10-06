@@ -11,7 +11,7 @@ interface KasirLoginPageProps {
 export const KasirLoginPage: React.FC<KasirLoginPageProps> = ({ onLoginSuccess, onNavigateToAdmin }) => {
   const { login } = usePOS();
   const [username, setUsername] = useState<string>('gusti');
-  const [password, setPassword] = useState<string>('123456');
+  const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);

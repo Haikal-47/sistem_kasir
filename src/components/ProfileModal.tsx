@@ -43,6 +43,7 @@ export const ProfileModal: React.FC = () => {
 
   const [passwordError, setPasswordError] = useState<string>('');
   const [passwordSuccess, setPasswordSuccess] = useState<string>('');
+  const [isSubmittingPassword, setIsSubmittingPassword] = useState<boolean>(false);
 
   // Profile data state
   const [profileName, setProfileName] = useState<string>('');
@@ -71,7 +72,7 @@ export const ProfileModal: React.FC = () => {
 
   if (!isProfileModalOpen) return null;
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError('');
     setPasswordSuccess('');
@@ -91,17 +92,24 @@ export const ProfileModal: React.FC = () => {
       return;
     }
 
-    const res = changePassword(cashier.role, currentPassword, newPassword);
-    if (!res.success) {
-      setPasswordError(res.message);
-    } else {
-      setPasswordSuccess('Kata sandi berhasil diubah! Gunakan kata sandi baru ini saat login.');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setTimeout(() => {
-        setPasswordSuccess('');
-      }, 4000);
+    setIsSubmittingPassword(true);
+    try {
+      const res = await changePassword(cashier.role, currentPassword, newPassword);
+      if (!res.success) {
+        setPasswordError(res.message);
+      } else {
+        setPasswordSuccess('Kata sandi berhasil diubah! Gunakan kata sandi baru ini saat login.');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setTimeout(() => {
+          setPasswordSuccess('');
+        }, 4000);
+      }
+    } catch {
+      setPasswordError('Terjadi kesalahan saat menyimpan kata sandi baru.');
+    } finally {
+      setIsSubmittingPassword(false);
     }
   };
 
@@ -266,7 +274,7 @@ export const ProfileModal: React.FC = () => {
                     type={showCurrentPassword ? 'text' : 'password'}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    placeholder="Masukkan kata sandi lama (Default: 123456)"
+                    placeholder={isSuperAdmin ? "Masukkan kata sandi saat ini" : "Masukkan kata sandi lama (Default: 123456)"}
                     className="w-full pl-10 pr-11 py-2.5 bg-slate-50 border border-slate-300 focus:bg-white focus:border-brand-600 rounded-xl text-xs font-medium text-slate-900 outline-hidden transition-all shadow-2xs"
                     autoFocus
                   />
@@ -348,14 +356,17 @@ export const ProfileModal: React.FC = () => {
               <div className="pt-2">
                 <button
                   type="submit"
+                  disabled={isSubmittingPassword}
                   className={`w-full py-3 px-4 rounded-xl text-xs font-extrabold text-white flex items-center justify-center gap-2 shadow-md transition-all active:scale-[0.99] ${
+                    isSubmittingPassword ? 'opacity-70 cursor-not-allowed' : ''
+                  } ${
                     isSuperAdmin
                       ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
                       : 'bg-brand-600 hover:bg-brand-700 shadow-brand-600/20'
                   }`}
                 >
                   <Save className="w-4 h-4" />
-                  <span>Simpan Kata Sandi Baru</span>
+                  <span>{isSubmittingPassword ? 'Menyimpan ke Database...' : 'Simpan Kata Sandi Baru'}</span>
                 </button>
               </div>
             </form>

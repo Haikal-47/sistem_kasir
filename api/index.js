@@ -226,6 +226,44 @@ router.get('/auth/me', (req, res) => {
   res.json({ user: req.user });
 });
 
+// POST /api/auth/change-password
+router.post('/auth/change-password', requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Kata sandi saat ini dan kata sandi baru wajib diisi.' });
+    }
+    if (typeof newPassword !== 'string' || newPassword.length < 4) {
+      return res.status(400).json({ error: 'Kata sandi baru minimal 4 karakter.' });
+    }
+    if (newPassword.length > 200) {
+      return res.status(400).json({ error: 'Kata sandi baru terlalu panjang.' });
+    }
+
+    const userId = req.user.id;
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Pengguna tidak ditemukan.' });
+    }
+
+    const user = userResult.rows[0];
+    const isCurrentValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isCurrentValid) {
+      return res.status(400).json({ error: 'Kata sandi saat ini tidak cocok.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await pool.query(
+      'UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [hashedPassword, userId]
+    );
+
+    res.json({ success: true, message: 'Kata sandi berhasil diperbarui!' });
+  } catch (error) {
+    sendSafeError(res, 500, 'Gagal memperbarui kata sandi.', error);
+  }
+});
+
 // ── Cashier Attendance (Absensi + Modal Kas + Tutup Kas) ───────────────────
 
 const getJakartaDateString = () => {

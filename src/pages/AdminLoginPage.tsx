@@ -11,7 +11,7 @@ interface AdminLoginPageProps {
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess, onNavigateToKasir }) => {
   const { login } = usePOS();
   const [username, setUsername] = useState<string>('admin');
-  const [password, setPassword] = useState<string>('admin123');
+  const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -151,7 +151,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess, 
               </button>
             </div>
             <p className="text-[11px] text-slate-500 mt-1.5">
-              Default admin: <span className="font-mono text-amber-300">admin</span> / <span className="font-mono text-amber-300">admin123</span>
+              Default awal: <span className="font-mono text-amber-300">admin</span> / <span className="font-mono text-amber-300">admin123</span> (atau kata sandi baru Anda)
             </p>
           </div>
 
