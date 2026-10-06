@@ -246,7 +246,10 @@ export const HistoryPage: React.FC = () => {
                     )}
                     <div className="flex items-center gap-1">
                       {tx.status === 'MENUNGGU_KONFIRMASI' && (
-                        <button onClick={() => confirmTransferPayment(tx.id)}
+                        <button onClick={async () => {
+                          const result = await confirmTransferPayment(tx.id);
+                          if (!result.success) alert(result.error || 'Gagal mengkonfirmasi.');
+                        }}
                           className="py-1.5 px-3 rounded-lg bg-brand-600 text-white font-bold text-xs hover:bg-brand-700 transition-colors">
                           Konfirmasi
                         </button>
@@ -364,7 +367,10 @@ export const HistoryPage: React.FC = () => {
                         {/* Quick Confirm button if pending */}
                         {tx.status === 'MENUNGGU_KONFIRMASI' && (
                           <button
-                            onClick={() => confirmTransferPayment(tx.id)}
+                            onClick={async () => {
+                              const result = await confirmTransferPayment(tx.id);
+                              if (!result.success) alert(result.error || 'Gagal mengkonfirmasi.');
+                            }}
                             className="py-1 px-2.5 rounded-lg bg-brand-600 text-white font-bold text-[11px] hover:bg-brand-700 transition-colors shadow-2xs"
                             title="Konfirmasi Lunas Sekarang"
                           >
@@ -578,8 +584,12 @@ export const HistoryPage: React.FC = () => {
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between gap-2">
               {selectedTxDetail.status === 'MENUNGGU_KONFIRMASI' && (
                 <button
-                  onClick={() => {
-                    confirmTransferPayment(selectedTxDetail.id);
+                  onClick={async () => {
+                    const result = await confirmTransferPayment(selectedTxDetail.id);
+                    if (!result.success) {
+                      alert(result.error || 'Gagal mengkonfirmasi.');
+                      return;
+                    }
                     setSelectedTxDetail(null);
                   }}
                   className="py-2 px-4 rounded-xl bg-brand-600 text-white font-bold text-xs hover:bg-brand-700"

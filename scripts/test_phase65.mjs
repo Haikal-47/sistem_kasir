@@ -251,9 +251,11 @@ async function runPhase65Tests() {
     // ── 11. POST-RECOVERY SMOKE TEST ON ISOLATED SCHEMA ──
     console.log('\n--- TEST GROUP 11: Post-Recovery Operational Smoke Test ---');
     // Test transaction creation & stock decrement on recovery schema
-    const testPrdRes = await client.query(`SELECT id, stock FROM "${testSchemaName}".products WHERE stock > 5 LIMIT 1;`);
+    const testPrdRes = await client.query(`SELECT id, stock FROM "${testSchemaName}".products LIMIT 1;`);
     const testPrd = testPrdRes.rows[0];
-    const initialStock = testPrd.stock;
+    // In isolated schema, set test stock to 10 so we can safely test decrement & restoration
+    await client.query(`UPDATE "${testSchemaName}".products SET stock = 10 WHERE id = $1;`, [testPrd.id]);
+    const initialStock = 10;
 
     // Mutate stock in isolated recovery schema
     await client.query(`UPDATE "${testSchemaName}".products SET stock = stock - 1 WHERE id = $1;`, [testPrd.id]);

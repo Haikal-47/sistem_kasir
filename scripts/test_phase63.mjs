@@ -99,10 +99,13 @@ async function runTests() {
     `, [TEST_CASHIER.id, TEST_CASHIER.username, TEST_CASHIER.name, TEST_ADMIN.id, TEST_ADMIN.username, TEST_ADMIN.name]);
 
     // Ensure active attendance for cashier
+    // FIX: Use ON CONFLICT (id) to handle date rollover correctly.
+    // The hardcoded ID 'ATT-P63-001' must upsert on its own PK,
+    // not on (user_id, date) which fails when today changes.
     await client.query(`
       INSERT INTO cashier_attendances (id, user_id, cashier_name, date, check_in, opening_cash, status)
       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, 500000, 'working')
-      ON CONFLICT (user_id, date) DO UPDATE SET status = 'working'
+      ON CONFLICT (id) DO UPDATE SET date = EXCLUDED.date, status = 'working'
     `, ['ATT-P63-001', TEST_CASHIER.id, TEST_CASHIER.name, today]);
 
     // ── SECTION 1: DATABASE CHECK CONSTRAINT ENFORCEMENT ─────────────────

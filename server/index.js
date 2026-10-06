@@ -20,7 +20,21 @@ if (!AUTH_SECRET) {
   process.exit(1);
 }
 
-app.use(cors());
+// CORS: restrict to ALLOWED_ORIGINS in production, permissive in dev
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+  : null;
+app.use(cors(allowedOrigins ? {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+} : undefined));
+
 app.use(express.json({ limit: '10mb' }));
 
 // ─── Token & Auth Helpers ──────────────────────────────────────────────────

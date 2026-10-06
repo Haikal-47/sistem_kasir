@@ -122,7 +122,23 @@ const sendSafeError = (res, statusCode, publicMessage, internalError = null) => 
 };
 
 const app = express();
-app.use(cors());
+
+// CORS: restrict to ALLOWED_ORIGINS in production, permissive in dev
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+  : null;
+app.use(cors(allowedOrigins ? {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, mobile apps, curl)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+} : undefined));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(authenticate);
 

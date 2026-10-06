@@ -662,7 +662,10 @@ export const DashboardPage: React.FC = () => {
                     </button>
 
                     <button
-                      onClick={() => confirmTransferPayment(tx.id)}
+                      onClick={async () => {
+                        const result = await confirmTransferPayment(tx.id);
+                        if (!result.success) alert(result.error || 'Gagal mengkonfirmasi.');
+                      }}
                       className="py-1.5 px-4 rounded-xl bg-brand-600 text-white hover:bg-brand-700 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"
                     >
                       <Check className="w-3.5 h-3.5" />

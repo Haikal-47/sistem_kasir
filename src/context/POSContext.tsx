@@ -94,7 +94,7 @@ interface POSContextType {
   fetchTransactions: (page?: number, limit?: number, startDate?: string, endDate?: string, status?: string, paymentMethod?: string, search?: string) => Promise<void>;
   createCashTransaction: (cashGiven: number, methodName?: string, customerName?: string, customerPhone?: string) => Promise<{ success: boolean; transaction?: Transaction; error?: string }>;
   createTransferTransaction: (methodName: string, transferBank: string, proofUrl: string, isConfirmedDirectly: boolean, customerName?: string, customerPhone?: string) => Promise<{ success: boolean; transaction?: Transaction; error?: string }>;
-  confirmTransferPayment: (transactionId: string) => void;
+  confirmTransferPayment: (transactionId: string) => Promise<{ success: boolean; error?: string }>;
   cancelTransaction: (transactionId: string) => Promise<{ success: boolean; error?: string }>;
   pendingConfirmations: Transaction[];
   
@@ -173,7 +173,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           p.category === 'Minuman' ||
           p.category === 'Makanan Instan'
         );
-        if (!hasOldGrocery && parsed.length > 0) {
+        if (!hasOldGrocery && Array.isArray(parsed)) {
           return parsed;
         }
       } catch (e) { console.error(e); }
@@ -192,7 +192,7 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const hasOldDummyTx = Array.isArray(parsed) && parsed.some((t: Transaction) =>
           t.id === 'TRX-101' || t.invoiceNumber?.startsWith('INV/20260919')
         );
-        if (!hasOldGroceryTx && !hasOldDummyTx && parsed.length > 0) {
+        if (!hasOldGroceryTx && !hasOldDummyTx && Array.isArray(parsed)) {
           return parsed.slice(0, 50);
         }
       } catch (e) { console.error(e); }
@@ -607,8 +607,9 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (prodRes.ok && txRes.ok) {
           const prodData = await prodRes.json();
           const txData = await txRes.json();
-          if (Array.isArray(prodData) && prodData.length > 0) {
+          if (Array.isArray(prodData)) {
             setProducts(prodData);
+            localStorage.setItem('pos_products', JSON.stringify(prodData));
           }
           const txList = Array.isArray(txData) ? txData : (txData?.data || []);
           setTransactions(txList);
@@ -1241,28 +1242,43 @@ export const POSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const confirmTransferPayment = (transactionId: string) => {
-    const now = new Date().toISOString();
-    setTransactions(prev =>
-      prev.map(tx => {
-        if (tx.id === transactionId) {
-          return {
-            ...tx,
-            status: 'LUNAS',
-            transferProofVerified: true,
-            transferConfirmedAt: now,
-            transferConfirmedBy: currentUser?.name || cashier.name,
-          };
-        }
-        return tx;
-      })
-    );
+  // FIX: confirmTransferPayment is now async & backend-first.
+  // Local state is ONLY updated after backend confirms successfully.
+  const confirmTransferPayment = async (transactionId: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`/api/transactions/${transactionId}/confirm`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ confirmedBy: currentUser?.name || cashier.name }),
+      });
 
-    fetch(`/api/transactions/${transactionId}/confirm`, {
-      method: 'PATCH',
-      headers: authHeaders(),
-      body: JSON.stringify({ confirmedBy: currentUser?.name || cashier.name }),
-    }).catch(err => console.error('Failed to confirm transaction in Neon DB:', err));
+      const data = await res.json();
+
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Gagal mengkonfirmasi transaksi.' };
+      }
+
+      // Backend success — now update local state
+      const now = new Date().toISOString();
+      setTransactions(prev =>
+        prev.map(tx => {
+          if (tx.id === transactionId) {
+            return {
+              ...tx,
+              status: 'LUNAS',
+              transferProofVerified: true,
+              transferConfirmedAt: now,
+              transferConfirmedBy: currentUser?.name || cashier.name,
+            };
+          }
+          return tx;
+        })
+      );
+      return { success: true };
+    } catch (err) {
+      console.error('Failed to confirm transaction in Neon DB:', err);
+      return { success: false, error: 'Terjadi gangguan jaringan ke server.' };
+    }
   };
 
   // FIX #1: cancelTransaction sekarang async dan backend-first.

@@ -341,53 +341,57 @@ export const initDatabase = async () => {
       { id: 'PRD-015', name: 'Kaos Basic Cotton Combed 24s', brand: 'ARFA FASHION', category: 'Atasan & Kemeja', price: 65000, costPrice: 45000, stock: 35, barcode: '8991001001151', unit: 'Pcs', colors: ['Hitam', 'Putih', 'Navy', 'Abu-abu', 'Maroon', 'Olive'], sizes: ['S', 'M', 'L', 'XL', 'XXL'] },
     ];
 
-    // Seed / update products with variants
-    for (const p of fashionData) {
-      const vars = buildVariants(p.id, p.colors, p.sizes, p.stock);
-      await client.query(`
-        INSERT INTO products (id, name, brand, category, price, cost_price, stock, barcode, unit, colors, sizes, variants)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        ON CONFLICT (id) DO UPDATE SET
-          colors = EXCLUDED.colors,
-          sizes = EXCLUDED.sizes,
-          variants = CASE WHEN products.variants IS NULL OR products.variants = '[]'::jsonb THEN EXCLUDED.variants ELSE products.variants END;
-      `, [p.id, p.name, p.brand, p.category, p.price, p.costPrice, p.stock, p.barcode, p.unit, JSON.stringify(p.colors), JSON.stringify(p.sizes), JSON.stringify(vars)]);
+    // Seed / update products with variants only if explicitly requested
+    if (process.env.SEED_SAMPLE_PRODUCTS === 'true') {
+      for (const p of fashionData) {
+        const vars = buildVariants(p.id, p.colors, p.sizes, p.stock);
+        await client.query(`
+          INSERT INTO products (id, name, brand, category, price, cost_price, stock, barcode, unit, colors, sizes, variants)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ON CONFLICT (id) DO UPDATE SET
+            colors = EXCLUDED.colors,
+            sizes = EXCLUDED.sizes,
+            variants = CASE WHEN products.variants IS NULL OR products.variants = '[]'::jsonb THEN EXCLUDED.variants ELSE products.variants END;
+        `, [p.id, p.name, p.brand, p.category, p.price, p.costPrice, p.stock, p.barcode, p.unit, JSON.stringify(p.colors), JSON.stringify(p.sizes), JSON.stringify(vars)]);
+      }
+      console.log('✅ Varian produk fashion berhasil di-sinkronkan ke Neon DB');
     }
-    console.log('✅ Varian produk fashion berhasil di-sinkronkan ke Neon DB');
 
-    // Seed transactions if empty
-    const txCheck = await client.query(`SELECT COUNT(*) FROM transactions`);
-    if (parseInt(txCheck.rows[0].count, 10) === 0) {
-      await client.query(`
-        INSERT INTO transactions (
-          id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total, payment_method, status, cash_given, change_amount
-        ) VALUES (
-          'TRX-101', 'INV/20260919/0001', '2026-09-19T08:32:15', 'Gusti',
-          '[{"productId":"PRD-001","name":"Atasan Stripe Polo Kerah Jeans","brand":"BY.ELFARA","price":145000,"quantity":2,"subtotal":290000},{"productId":"PRD-013","name":"Pashmina Ceruty Baby Doll 180x75","brand":"ZAHRA HIJAB","price":35000,"quantity":2,"subtotal":70000}]'::jsonb,
-          360000, 0, 0, 360000, 'TUNAI', 'LUNAS', 400000, 40000
-        );
-      `);
+    // Seed sample transactions only if explicitly requested
+    if (process.env.SEED_SAMPLE_TRANSACTIONS === 'true') {
+      const txCheck = await client.query(`SELECT COUNT(*) FROM transactions`);
+      if (parseInt(txCheck.rows[0].count, 10) === 0) {
+        await client.query(`
+          INSERT INTO transactions (
+            id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total, payment_method, status, cash_given, change_amount
+          ) VALUES (
+            'TRX-101', 'INV/20260919/0001', '2026-09-19T08:32:15', 'Gusti',
+            '[{"productId":"PRD-001","name":"Atasan Stripe Polo Kerah Jeans","brand":"BY.ELFARA","price":145000,"quantity":2,"subtotal":290000},{"productId":"PRD-013","name":"Pashmina Ceruty Baby Doll 180x75","brand":"ZAHRA HIJAB","price":35000,"quantity":2,"subtotal":70000}]'::jsonb,
+            360000, 0, 0, 360000, 'TUNAI', 'LUNAS', 400000, 40000
+          );
+        `);
 
-      await client.query(`
-        INSERT INTO transactions (
-          id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total, payment_method, status, transfer_bank, transfer_proof_url, transfer_proof_verified, transfer_confirmed_at, transfer_confirmed_by
-        ) VALUES (
-          'TRX-102', 'INV/20260919/0002', '2026-09-19T09:14:40', 'Gusti',
-          '[{"productId":"PRD-003","name":"Cardigan Stripe Kerah Jeans","brand":"BY.ELFARA","price":146000,"quantity":2,"subtotal":292000},{"productId":"PRD-009","name":"Kulot Highwaist Linen Premium","brand":"ARFA FASHION","price":95000,"quantity":1,"subtotal":95000}]'::jsonb,
-          387000, 0, 0, 387000, 'TRANSFER', 'LUNAS', 'BCA (Virtual Account)', 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&q=80', true, '2026-09-19T09:16:00', 'Gusti'
-        );
-      `);
+        await client.query(`
+          INSERT INTO transactions (
+            id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total, payment_method, status, transfer_bank, transfer_proof_url, transfer_proof_verified, transfer_confirmed_at, transfer_confirmed_by
+          ) VALUES (
+            'TRX-102', 'INV/20260919/0002', '2026-09-19T09:14:40', 'Gusti',
+            '[{"productId":"PRD-003","name":"Cardigan Stripe Kerah Jeans","brand":"BY.ELFARA","price":146000,"quantity":2,"subtotal":292000},{"productId":"PRD-009","name":"Kulot Highwaist Linen Premium","brand":"ARFA FASHION","price":95000,"quantity":1,"subtotal":95000}]'::jsonb,
+            387000, 0, 0, 387000, 'TRANSFER', 'LUNAS', 'BCA (Virtual Account)', 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&q=80', true, '2026-09-19T09:16:00', 'Gusti'
+          );
+        `);
 
-      await client.query(`
-        INSERT INTO transactions (
-          id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total, payment_method, status, transfer_bank, transfer_proof_url, transfer_proof_verified, customer_note
-        ) VALUES (
-          'TRX-103', 'INV/20260919/0003', '2026-09-19T10:05:22', 'Gusti',
-          '[{"productId":"PRD-007","name":"Gamis Crinkle Airflow Premium","brand":"ARFA FASHION","price":175000,"quantity":1,"subtotal":175000},{"productId":"PRD-014","name":"Hijab Segi Empat Voal Miracle Laser Cut","brand":"ZAHRA HIJAB","price":38000,"quantity":2,"subtotal":76000}]'::jsonb,
-          251000, 0, 0, 251000, 'TRANSFER', 'MENUNGGU_KONFIRMASI', 'Mandiri Livin', 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=400&q=80', false, 'Pesanan Online / Reguler'
-        );
-      `);
-      console.log('✅ Transaksi awal fashion berhasil di-seed ke Neon DB');
+        await client.query(`
+          INSERT INTO transactions (
+            id, invoice_number, date, cashier_name, items, subtotal, tax, discount, total, payment_method, status, transfer_bank, transfer_proof_url, transfer_proof_verified, customer_note
+          ) VALUES (
+            'TRX-103', 'INV/20260919/0003', '2026-09-19T10:05:22', 'Gusti',
+            '[{"productId":"PRD-007","name":"Gamis Crinkle Airflow Premium","brand":"ARFA FASHION","price":175000,"quantity":1,"subtotal":175000},{"productId":"PRD-014","name":"Hijab Segi Empat Voal Miracle Laser Cut","brand":"ZAHRA HIJAB","price":38000,"quantity":2,"subtotal":76000}]'::jsonb,
+            251000, 0, 0, 251000, 'TRANSFER', 'MENUNGGU_KONFIRMASI', 'Mandiri Livin', 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=400&q=80', false, 'Pesanan Online / Reguler'
+          );
+        `);
+        console.log('✅ Transaksi awal fashion berhasil di-seed ke Neon DB');
+      }
     }
 
     console.log('🎉 Neon PostgreSQL Database siap digunakan!');

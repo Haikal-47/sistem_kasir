@@ -276,10 +276,7 @@ const RAW_PRODUCTS: Omit<Product, 'variants'>[] = [
   }
 ];
 
-export const INITIAL_PRODUCTS: Product[] = RAW_PRODUCTS.map(p => ({
-  ...p,
-  variants: makeVariants(p.id, p.colors || [], p.sizes || [], p.stock)
-}));
+export const INITIAL_PRODUCTS: Product[] = [];
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [];
 
